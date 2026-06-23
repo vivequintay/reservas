@@ -128,17 +128,21 @@ function crearCobro(e) {
   // dte se agrega DESPUÉS de firmar (no es campo x_).
   data.dte = { net_amount: precio, exempt_amount: 1, type: 48 };
 
+  Logger.log('Secret len=%s | firma=%s', secret.length, data.x_signature);
+
   var resp = UrlFetchApp.fetch(endpoint, {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(data),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
+    followRedirects: false   // un 3xx = TUU rechazó (firma inválida) → no seguirlo a ciegas
   });
 
+  var code = resp.getResponseCode();
   var body = (resp.getContentText() || '').trim();
 
-  if (resp.getResponseCode() !== 200 || !/^https?:\/\//.test(body)) {
-    Logger.log('Respuesta TUU inesperada (%s): %s', resp.getResponseCode(), body);
+  if (code !== 200 || !/^https?:\/\//.test(body)) {
+    Logger.log('Respuesta TUU inesperada (%s): %s', code, body.substring(0, 200));
     return paginaError('No se pudo iniciar el pago. Inténtalo nuevamente en unos minutos.');
   }
 
@@ -325,6 +329,39 @@ function paginaError(msg) {
     (pwaUrl ? '<p><a href="' + pwaUrl + '">Volver a reservar</a></p>' : '') +
     '</body></html>';
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ─────────────────────── Diagnóstico (ejecutar para depurar) ────────────────
+// Calcula la firma sobre un caso FIJO conocido y la compara con la esperada,
+// revisa el largo de la clave secreta, y consulta a TUU. Ver el resultado en
+// Ejecuciones / registro.
+function diagnostico() {
+  var secret = prop('TUU_SECRET', '');
+  Logger.log('1) Largo de TUU_SECRET: %s  (debe ser 128)', secret.length);
+
+  var data = {
+    platform: 'woocommerce', paymentMethod: 'webpay', x_account_id: '62224230',
+    x_amount: 4000, x_currency: 'CLP', x_customer_email: 'prueba@ejemplo.cl',
+    x_customer_first_name: 'Juan', x_customer_last_name: 'Perez', x_customer_phone: '+56912345678',
+    x_description: 'Reserva', x_reference: 'RES-DIAG-FIJO',
+    x_shop_country: 'CL', x_shop_name: 'Vive Quintay SpA',
+    x_url_callback: 'https://example.com/cb', x_url_cancel: 'https://example.com/cancel',
+    x_url_complete: 'https://example.com/complete', secret: '18756627', dte_type: 48
+  };
+  var sig = firmarTUU(data, secret);
+  var esperada = '99ca5660f16a142d35a0784267ea6cc63eb1cb83cbd666aab00e26aadf9ce1f8';
+  Logger.log('2) Firma calculada: %s', sig);
+  Logger.log('3) Firma esperada:  %s', esperada);
+  Logger.log('4) ¿COINCIDEN?: %s', (sig === esperada));
+
+  data.x_signature = sig;
+  data.dte = { net_amount: 4000, exempt_amount: 1, type: 48 };
+  var resp = UrlFetchApp.fetch(TUU_ENDPOINTS.dev, {
+    method: 'post', contentType: 'application/json',
+    payload: JSON.stringify(data), muteHttpExceptions: true, followRedirects: false
+  });
+  Logger.log('5) TUU código: %s', resp.getResponseCode());
+  Logger.log('6) TUU respuesta: %s', (resp.getContentText() || '').substring(0, 200));
 }
 
 // ─────────────────────── Setup (ejecutar UNA vez) ───────────────────────────
