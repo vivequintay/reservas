@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VIVE QUINTAY SPA - RESERVAS</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0A2F4F">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: #0A2F4F;
+            color: white;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            overflow-x: hidden;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        /* ─── Header ─── */
+        .app-logo {
+            width: 62px;
+            height: 62px;
+            border-radius: 14px;
+            display: block;
+            margin: 0 auto 12px auto;
+        }
+        .brand-title {
+            margin: 0 0 4px 0;
+            font-size: 1.65rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+            background: linear-gradient(90deg, #7B9EFF 0%, #52D45A 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 18px rgba(100,180,100,0.35));
+        }
+        .brand-spa {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 9px;
+            color: rgba(255,255,255,0.45);
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        .status {
+            background: #0D3B5C;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            letter-spacing: 1px;
+        }
+
+        /* ─── Stepper ─── */
+        .stepper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin: 24px 0 28px 0;
+        }
+        .step-dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.18);
+            transition: background 0.25s, transform 0.25s;
+        }
+        .step-dot.active { background: #00E0D0; transform: scale(1.25); }
+        .step-dot.done   { background: #52D45A; }
+
+        /* ─── Screens ─── */
+        .screen { display: none; animation: fadeUp 0.3s ease both; }
+        .screen.active { display: block; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        h2.titulo {
+            color: #00E0D0;
+            margin: 0 0 6px 0;
+            letter-spacing: 1px;
+            font-weight: 800;
+            font-size: 1.3rem;
+        }
+        p.subtitulo {
+            color: rgba(255,255,255,0.55);
+            font-size: 0.9rem;
+            margin: 0 0 22px 0;
+            line-height: 1.4;
+        }
+
+        /* ─── Inputs ─── */
+        label.campo {
+            display: block;
+            text-align: left;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.55);
+            text-transform: uppercase;
+            margin: 0 0 7px 4px;
+        }
+        input[type="text"],
+        input[type="email"],
+        input[type="tel"] {
+            width: 100%;
+            padding: 16px 18px;
+            font-size: 1.15rem;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            font-weight: 600;
+            border-radius: 14px;
+            border: 2px solid #0D5575;
+            text-align: center;
+            background: #fdfdfd;
+            color: #0A2F4F;
+            outline: none;
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
+            margin-bottom: 18px;
+        }
+        input:focus { border-color: #00E0D0; box-shadow: 0 0 0 4px rgba(0,224,208,0.22); }
+
+        /* La caja grande de patente (pantalla 1) */
+        #inputPatente {
+            font-size: 1.9rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            border: 2px solid #00E0D0;
+            padding: 22px 18px;
+        }
+        .hint {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.45);
+            margin: -8px 0 24px 0;
+            line-height: 1.4;
+        }
+
+        /* ─── Buttons ─── */
+        button {
+            width: 100%;
+            border: none;
+            border-radius: 16px;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.2s;
+        }
+        button:active { transform: scale(0.97); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .btn-primario {
+            background: linear-gradient(135deg, #00C853, #00913B);
+            color: white;
+            padding: 20px;
+            font-size: 1.6rem;
+            letter-spacing: 2px;
+            margin-top: 10px;
+        }
+        .btn-pagar {
+            background: linear-gradient(135deg, #2196F3, #1565C0);
+            color: white;
+            padding: 20px;
+            font-size: 1.4rem;
+            letter-spacing: 1px;
+            margin-top: 10px;
+        }
+        .btn-volver {
+            background: transparent;
+            color: rgba(255,255,255,0.4);
+            border: 1.5px solid rgba(255,255,255,0.16);
+            padding: 13px;
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            margin-top: 14px;
+            box-shadow: none;
+        }
+        .btn-volver:active { background: rgba(255,255,255,0.07); box-shadow: none; }
+
+        .error-msg {
+            color: #FF8A80;
+            font-size: 0.88rem;
+            font-weight: 600;
+            min-height: 20px;
+            margin: -6px 0 12px 0;
+        }
+
+        /* ─── Calendario ─── */
+        .cal {
+            background: #0D3B5C;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+        .cal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .cal-nav {
+            width: 38px; height: 38px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.08);
+            color: white;
+            font-size: 1.2rem;
+            box-shadow: none;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cal-mes {
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: capitalize;
+            color: #00E0D0;
+        }
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .cal-dow {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: rgba(255,255,255,0.35);
+            padding: 4px 0;
+            text-transform: uppercase;
+        }
+        .cal-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            background: rgba(255,255,255,0.05);
+            transition: background 0.15s, transform 0.1s;
+        }
+        .cal-day.vacio { background: transparent; cursor: default; }
+        .cal-day.deshabilitado {
+            color: rgba(255,255,255,0.18);
+            background: transparent;
+            cursor: not-allowed;
+        }
+        .cal-day.habilitado:active { transform: scale(0.9); }
+        .cal-day.seleccionado {
+            background: linear-gradient(135deg, #00C853, #00913B);
+            color: white;
+        }
+
+        /* ─── Tramos ─── */
+        .tramos {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .tramo {
+            padding: 15px 8px;
+            border-radius: 12px;
+            background: #0D3B5C;
+            border: 2px solid transparent;
+            font-weight: 700;
+            font-size: 1rem;
+            box-shadow: none;
+            color: white;
+        }
+        .tramo.seleccionado {
+            border-color: #00E0D0;
+            background: #0A4763;
+            color: #00E0D0;
+        }
+
+        /* ─── Resumen ─── */
+        .resumen {
+            background: #0D3B5C;
+            border-radius: 16px;
+            padding: 20px;
+            margin: 8px 0 18px 0;
+            text-align: left;
+        }
+        .resumen-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 0;
+            font-size: 0.95rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .resumen-row:last-child { border-bottom: none; }
+        .resumen-row .k { color: rgba(255,255,255,0.5); }
+        .resumen-row .v { font-weight: 700; color: white; text-align: right; }
+        .resumen-total {
+            margin-top: 10px;
+            padding-top: 14px;
+            border-top: 2px solid rgba(0,224,208,0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .resumen-total .k { font-weight: 700; letter-spacing: 1px; }
+        .resumen-total .v {
+            font-size: 1.9rem;
+            font-weight: 900;
+            color: #52D45A;
+        }
+
+        .nota-pago {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.4);
+            margin-top: 14px;
+            line-height: 1.4;
+        }
+        .lock { vertical-align: middle; }
+
+        /* ─── Splash ─── */
+        #splash-screen {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 99999;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: radial-gradient(ellipse at center, #0E3D62 0%, #061D31 100%);
+            opacity: 1;
+            transition: opacity 0.45s ease;
+        }
+        #splash-screen.fade-out { opacity: 0; pointer-events: none; }
+        .splash-glow {
+            position: absolute;
+            width: 220px; height: 220px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(123,158,255,0.28) 0%, rgba(82,212,90,0.18) 45%, transparent 70%);
+            animation: splashGlow 0.9s cubic-bezier(0.25,0.46,0.45,0.94) 0.15s both;
+        }
+        @keyframes splashGlow {
+            0% { transform: scale(0.4); opacity: 0; }
+            55% { opacity: 1; }
+            100% { transform: scale(1); opacity: 0.6; }
+        }
+        .splash-logo {
+            width: 120px; height: 120px;
+            border-radius: 26px;
+            position: relative; z-index: 1;
+            animation: splashLogoRise 0.65s cubic-bezier(0.175,0.885,0.32,1.275) 0.2s both;
+        }
+        @keyframes splashLogoRise {
+            from { opacity: 0; transform: scale(0.72); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .splash-title {
+            margin: 20px 0 5px 0;
+            font-size: 1.85rem; font-weight: 900; letter-spacing: 3px;
+            background: linear-gradient(90deg, #7B9EFF 0%, #52D45A 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            filter: drop-shadow(0 0 16px rgba(100,180,100,0.3));
+            animation: splashFadeUp 0.5s ease 0.55s both;
+        }
+        .splash-spa {
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 10px;
+            color: rgba(255,255,255,0.38); text-transform: uppercase;
+            animation: splashFadeUp 0.5s ease 0.85s both;
+        }
+        @keyframes splashFadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ─── Pantalla final ─── */
+        .ok-icon {
+            width: 90px; height: 90px;
+            margin: 10px auto 18px auto;
+            fill: #52D45A;
+            animation: bounceIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275);
+        }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Splash -->
+    <div id="splash-screen">
+        <div class="splash-glow"></div>
+        <img src="logo.png" class="splash-logo" alt="Logo">
+        <h2 class="splash-title">VIVE QUINTAY</h2>
+        <span class="splash-spa">SPA</span>
+    </div>
+
+    <!-- Header -->
+    <div style="margin-bottom:6px;">
+        <img src="logo.png" class="app-logo" alt="Logo">
+        <h2 class="brand-title">VIVE QUINTAY</h2>
+        <span class="brand-spa">SPA</span>
+        <span class="status">RESERVA DE ESTACIONAMIENTO</span>
+    </div>
+
+    <!-- Stepper -->
+    <div class="stepper">
+        <span class="step-dot active" data-step="1"></span>
+        <span class="step-dot" data-step="2"></span>
+        <span class="step-dot" data-step="3"></span>
+    </div>
+
+    <!-- ─── Pantalla 1: Patente ─── -->
+    <section id="screen-1" class="screen active">
+        <h2 class="titulo">¿Cuál es tu patente?</h2>
+        <p class="subtitulo">Reserva tu lugar con anticipación y llega directo.</p>
+
+        <input type="text" id="inputPatente" placeholder="ABCD23" autocomplete="off" inputmode="text" />
+        <p class="hint">Auto, moto o vehículo extranjero — sirve cualquier formato.<br>Escríbela sin guiones ni espacios.</p>
+
+        <button class="btn-primario" id="btn-reservar" onclick="irADatos()">RESERVAR</button>
+    </section>
+
+    <!-- ─── Pantalla 2: Datos + fecha + tramo ─── -->
+    <section id="screen-2" class="screen">
+        <h2 class="titulo">Tus datos y el día</h2>
+        <p class="subtitulo">Patente: <strong id="patente-eco" style="color:#00E0D0;letter-spacing:2px;"></strong></p>
+
+        <label class="campo">Nombre completo</label>
+        <input type="text" id="inputNombre" placeholder="Tu nombre" autocomplete="name" />
+
+        <label class="campo">Correo electrónico</label>
+        <input type="email" id="inputEmail" placeholder="tucorreo@ejemplo.cl" autocomplete="email" />
+
+        <label class="campo">Teléfono</label>
+        <input type="tel" id="inputTelefono" placeholder="+56 9 ..." autocomplete="tel" />
+
+        <label class="campo">Día de la reserva</label>
+        <div class="cal">
+            <div class="cal-header">
+                <button class="cal-nav" onclick="cambiarMes(-1)">‹</button>
+                <span class="cal-mes" id="cal-mes"></span>
+                <button class="cal-nav" onclick="cambiarMes(1)">›</button>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+        </div>
+
+        <label class="campo">Tramo horario estimado</label>
+        <div class="tramos" id="tramos"></div>
+
+        <p class="error-msg" id="error-datos"></p>
+
+        <button class="btn-primario" onclick="irAPago()">CONTINUAR</button>
+        <button class="btn-volver" onclick="irAPantalla(1)">VOLVER</button>
+    </section>
+
+    <!-- ─── Pantalla 3: Resumen + pago ─── -->
+    <section id="screen-3" class="screen">
+        <h2 class="titulo">Confirma y paga</h2>
+        <p class="subtitulo">Revisa los datos de tu reserva.</p>
+
+        <div class="resumen" id="resumen"></div>
+
+        <button class="btn-pagar" onclick="pagar()">
+            <span class="lock">🔒</span> IR A PAGAR
+        </button>
+        <button class="btn-volver" onclick="irAPantalla(2)">VOLVER</button>
+
+        <p class="nota-pago">
+            El pago se realiza en la pasarela segura de TUU. Tu reserva queda confirmada
+            solo una vez aprobado el pago.
+        </p>
+    </section>
+
+    <!-- ─── Pantalla final (placeholder) ─── -->
+    <section id="screen-ok" class="screen">
+        <svg class="ok-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        <h2 class="titulo" id="ok-titulo">¡Casi listo!</h2>
+        <p class="subtitulo" id="ok-texto"></p>
+        <button class="btn-volver" onclick="reiniciar()">HACER OTRA RESERVA</button>
+    </section>
+
+    <script>
+        // ─────────── Firebase (solo LECTURA de config) ───────────
+        const firebaseConfig = {
+            projectId: "vive-quintay-spa",
+            authDomain: "vive-quintay-spa.firebaseapp.com",
+            storageBucket: "vive-quintay-spa.appspot.com",
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // ─────────── Configuración (con defaults; luego se lee de config/reservas) ───────────
+        const CONFIG_DEFAULT = {
+            precio: 4000,
+            // 0=Dom 1=Lun ... 6=Sab. Por defecto todos los días.
+            dias_semana: [0, 1, 2, 3, 4, 5, 6],
+            // Fechas puntuales bloqueadas (feriados/cerrado), formato "YYYY-MM-DD"
+            fechas_bloqueadas: [],
+            tramos: ["09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
+                     "12:00 - 13:00", "14:00 - 15:00", "15:00 - 16:00",
+                     "16:00 - 17:00", "17:00 - 18:00"]
+        };
+        let CONFIG = { ...CONFIG_DEFAULT };
+
+        async function cargarConfig() {
+            try {
+                const snap = await db.collection("config").doc("reservas").get();
+                if (snap.exists) CONFIG = { ...CONFIG_DEFAULT, ...snap.data() };
+            } catch (e) {
+                console.warn("No se pudo leer config/reservas, usando valores por defecto.", e);
+            }
+            renderTramos();
+            renderCalendario();
+        }
+
+        // ─────────── Estado de la reserva ───────────
+        const reserva = {
+            patente: "",
+            nombre: "",
+            email: "",
+            telefono: "",
+            fecha: "",   // "YYYY-MM-DD"
+            tramo: ""
+        };
+
+        // ─────────── Navegación entre pantallas ───────────
+        function irAPantalla(n) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            const ids = { 1: 'screen-1', 2: 'screen-2', 3: 'screen-3', ok: 'screen-ok' };
+            document.getElementById(ids[n]).classList.add('active');
+            // Stepper
+            document.querySelectorAll('.step-dot').forEach(d => {
+                const step = parseInt(d.dataset.step);
+                d.classList.remove('active', 'done');
+                if (typeof n === 'number') {
+                    if (step < n) d.classList.add('done');
+                    else if (step === n) d.classList.add('active');
+                } else {
+                    d.classList.add('done'); // pantalla OK: todos completos
+                }
+            });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ─────────── Normalización universal de patente ───────────
+        function normalizarPatente(raw) {
+            return (raw || "")
+                .toUpperCase()
+                .replace(/[-\s.]/g, "")   // sin guiones, espacios ni puntos
+                .replace(/[^A-Z0-9]/g, ""); // solo letras y números
+        }
+
+        // ─────────── Pantalla 1 → 2 ───────────
+        function irADatos() {
+            const p = normalizarPatente(document.getElementById("inputPatente").value);
+            if (p.length < 2) {
+                document.getElementById("inputPatente").focus();
+                return;
+            }
+            reserva.patente = p;
+            document.getElementById("patente-eco").textContent = p;
+            irAPantalla(2);
+        }
+
+        // Normaliza en vivo mientras escribe
+        document.getElementById("inputPatente").addEventListener("input", function () {
+            const pos = this.value.length;
+            this.value = this.value.toUpperCase();
+        });
+        document.getElementById("inputPatente").addEventListener("keydown", function (e) {
+            if (e.key === "Enter") irADatos();
+        });
+
+        // ─────────── Tramos ───────────
+        function renderTramos() {
+            const cont = document.getElementById("tramos");
+            cont.innerHTML = "";
+            CONFIG.tramos.forEach(t => {
+                const b = document.createElement("button");
+                b.className = "tramo";
+                b.textContent = t;
+                b.onclick = () => {
+                    reserva.tramo = t;
+                    document.querySelectorAll(".tramo").forEach(x => x.classList.remove("seleccionado"));
+                    b.classList.add("seleccionado");
+                };
+                cont.appendChild(b);
+            });
+        }
+
+        // ─────────── Calendario ───────────
+        const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio",
+                       "agosto","septiembre","octubre","noviembre","diciembre"];
+        const DOW = ["D","L","M","M","J","V","S"];
+        let calRef = new Date(); calRef.setDate(1);
+
+        function ymd(d) {
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return `${d.getFullYear()}-${m}-${day}`;
+        }
+
+        function diaHabilitado(d) {
+            const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+            if (d < hoy) return false;                                  // no pasado
+            if (!CONFIG.dias_semana.includes(d.getDay())) return false; // día de semana no laboral
+            if ((CONFIG.fechas_bloqueadas || []).includes(ymd(d))) return false; // feriado puntual
+            return true;
+        }
+
+        function cambiarMes(delta) {
+            calRef.setMonth(calRef.getMonth() + delta);
+            renderCalendario();
+        }
+
+        function renderCalendario() {
+            const grid = document.getElementById("cal-grid");
+            document.getElementById("cal-mes").textContent =
+                `${MESES[calRef.getMonth()]} ${calRef.getFullYear()}`;
+            grid.innerHTML = "";
+            DOW.forEach(d => {
+                const c = document.createElement("div");
+                c.className = "cal-dow";
+                c.textContent = d;
+                grid.appendChild(c);
+            });
+            const primerDia = new Date(calRef.getFullYear(), calRef.getMonth(), 1);
+            const offset = primerDia.getDay();
+            const diasEnMes = new Date(calRef.getFullYear(), calRef.getMonth() + 1, 0).getDate();
+            for (let i = 0; i < offset; i++) {
+                const v = document.createElement("div");
+                v.className = "cal-day vacio";
+                grid.appendChild(v);
+            }
+            for (let dia = 1; dia <= diasEnMes; dia++) {
+                const fecha = new Date(calRef.getFullYear(), calRef.getMonth(), dia);
+                const cel = document.createElement("div");
+                cel.textContent = dia;
+                if (diaHabilitado(fecha)) {
+                    cel.className = "cal-day habilitado";
+                    if (reserva.fecha === ymd(fecha)) cel.classList.add("seleccionado");
+                    cel.onclick = () => {
+                        reserva.fecha = ymd(fecha);
+                        renderCalendario();
+                    };
+                } else {
+                    cel.className = "cal-day deshabilitado";
+                }
+                grid.appendChild(cel);
+            }
+        }
+
+        // ─────────── Pantalla 2 → 3 ───────────
+        function fechaBonita(ymdStr) {
+            const [y, m, d] = ymdStr.split("-").map(Number);
+            const fecha = new Date(y, m - 1, d);
+            const diaSemana = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][fecha.getDay()];
+            return `${diaSemana} ${d} de ${MESES[m - 1]}`;
+        }
+
+        function irAPago() {
+            const err = document.getElementById("error-datos");
+            const nombre = document.getElementById("inputNombre").value.trim();
+            const email = document.getElementById("inputEmail").value.trim();
+            const tel = document.getElementById("inputTelefono").value.trim();
+
+            if (!nombre) { err.textContent = "Ingresa tu nombre."; return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = "Ingresa un correo válido (te enviaremos la confirmación)."; return; }
+            if (!reserva.fecha) { err.textContent = "Elige el día de tu reserva."; return; }
+            if (!reserva.tramo) { err.textContent = "Elige un tramo horario."; return; }
+            err.textContent = "";
+
+            reserva.nombre = nombre;
+            reserva.email = email;
+            reserva.telefono = tel;
+
+            renderResumen();
+            irAPantalla(3);
+        }
+
+        function renderResumen() {
+            const fmt = new Intl.NumberFormat("es-CL");
+            document.getElementById("resumen").innerHTML = `
+                <div class="resumen-row"><span class="k">Patente</span><span class="v">${reserva.patente}</span></div>
+                <div class="resumen-row"><span class="k">Nombre</span><span class="v">${reserva.nombre}</span></div>
+                <div class="resumen-row"><span class="k">Correo</span><span class="v">${reserva.email}</span></div>
+                <div class="resumen-row"><span class="k">Día</span><span class="v">${fechaBonita(reserva.fecha)}</span></div>
+                <div class="resumen-row"><span class="k">Tramo</span><span class="v">${reserva.tramo}</span></div>
+                <div class="resumen-total"><span class="k">TOTAL</span><span class="v">$${fmt.format(CONFIG.precio)}</span></div>
+            `;
+        }
+
+        // ─────────── Pago (placeholder — se conecta a TUU en la próxima etapa) ───────────
+        function pagar() {
+            // TODO: enviar `reserva` al backend (Apps Script), que crea el Payment Intent
+            // en TUU y devuelve la URL de pago a la que redirigimos aquí.
+            irAPantalla('ok');
+            document.getElementById("ok-titulo").textContent = "Pago en construcción 🔧";
+            document.getElementById("ok-texto").innerHTML =
+                "El flujo visual está listo. La conexión con la pasarela de pago TUU " +
+                "es la siguiente etapa.<br><br>Reserva preparada:<br>" +
+                `<strong style="color:#00E0D0">${reserva.patente}</strong> · ${fechaBonita(reserva.fecha)} · ${reserva.tramo}`;
+        }
+
+        function reiniciar() {
+            reserva.patente = ""; reserva.nombre = ""; reserva.email = "";
+            reserva.telefono = ""; reserva.fecha = ""; reserva.tramo = "";
+            document.getElementById("inputPatente").value = "";
+            document.getElementById("inputNombre").value = "";
+            document.getElementById("inputEmail").value = "";
+            document.getElementById("inputTelefono").value = "";
+            document.querySelectorAll(".tramo").forEach(x => x.classList.remove("seleccionado"));
+            calRef = new Date(); calRef.setDate(1);
+            renderCalendario();
+            irAPantalla(1);
+        }
+
+        // ─────────── Splash ───────────
+        (function splash() {
+            const s = document.getElementById("splash-screen");
+            setTimeout(() => {
+                s.classList.add("fade-out");
+                setTimeout(() => { s.style.display = "none"; }, 450);
+            }, 2200);
+        })();
+
+        // ─────────── Init ───────────
+        cargarConfig();
+
+        // ─────────── Service worker ───────────
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("sw.js").catch(e => console.warn("SW:", e));
+        }
+    </script>
+</body>
+</html>

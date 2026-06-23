@@ -1,0 +1,28 @@
+{
+  "name": "Vive Quintay - Reservas",
+  "short_name": "Reservas Quintay",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#061D31",
+  "theme_color": "#0A2F4F",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
