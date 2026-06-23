@@ -364,6 +364,16 @@ function diagnostico() {
   Logger.log('6) TUU respuesta: %s', (resp.getContentText() || '').substring(0, 200));
 }
 
+// Fuerza las credenciales de sandbox (úsala si diagnostico() dice que la clave
+// quedó con largo distinto de 128 — la sobreescribe con el valor correcto).
+function forzarCredencialesSandbox() {
+  var sp = PropertiesService.getScriptProperties();
+  sp.setProperty('TUU_ENV', 'dev');
+  sp.setProperty('TUU_ACCOUNT_ID', '62224230');
+  sp.setProperty('TUU_SECRET', 'yAk0dXTJLQzkeEWODsQWVpPX0bn7ND50qwoQrXgqqNiUyEpgxIPxPtoCgKeLNeh1upTw72JZx5O9x5IaAtPIGUAVcMNcsUSg3M0M8tgWdUb4F8qkS8I7rHpOUmZqzvfS');
+  Logger.log('Credenciales sandbox restablecidas. Largo TUU_SECRET: %s', sp.getProperty('TUU_SECRET').length);
+}
+
 // ─────────────────────── Setup (ejecutar UNA vez) ───────────────────────────
 function setup() {
   var sp = PropertiesService.getScriptProperties();
