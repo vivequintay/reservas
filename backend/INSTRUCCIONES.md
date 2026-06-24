@@ -1,102 +1,87 @@
-# Backend de reservas — despliegue (Google Apps Script)
+# Backend de reservas — despliegue (Google Apps Script + Mercado Pago)
 
-Este backend es el "cerebro" del pago: crea el cobro en TUU, recibe el webhook
-firmado, registra la reserva en una planilla y envía los correos de confirmación.
+Este backend crea el cobro en Mercado Pago (Checkout Pro), recibe el webhook,
+registra la reserva en una planilla y envía los correos de confirmación.
 
-> Etapa actual: **2a** (pago sandbox + correos + planilla). La escritura en
-> Firestore para que aparezca en caja es la etapa **2b** (más adelante).
+> Etapa actual: **2a** (pago + correos + planilla). La escritura en Firestore
+> para que aparezca en caja es la etapa **2b**.
+
+## 0. Obtener tu Access Token de Mercado Pago (self-service)
+
+1. Entra a <https://www.mercadopago.cl/developers> con tu cuenta.
+2. **Tus integraciones** → **Crear aplicación** → nombre `Reservas Vive Quintay`,
+   producto **Checkout Pro / Pagos online**.
+3. En la app → **Credenciales**. Verás dos juegos:
+   - **Credenciales de prueba** → `Access Token` (empieza con `TEST-...`).
+   - **Credenciales de producción** → `Access Token` (empieza con `APP_USR-...`).
+4. Para empezar usa el de **prueba**.
 
 ## 1. Crear el proyecto
 
-1. Entra a <https://script.google.com> con la cuenta de Google de Vive Quintay.
-2. **Nuevo proyecto**. Ponle nombre: `Reservas Vive Quintay`.
-3. Borra el contenido de `Código.gs` y pega **todo** el contenido de
-   [`Codigo.gs`](Codigo.gs).
-4. Guarda (💾).
+1. Entra a <https://script.google.com> con la cuenta de Vive Quintay.
+2. **Nuevo proyecto** → nómbralo `Reservas Vive Quintay`.
+3. Borra el contenido y pega **todo** [`Codigo.gs`](Codigo.gs). Guarda (💾).
 
-## 2. Inicializar (crea la planilla y las propiedades)
+## 2. Inicializar y configurar
 
-1. Arriba, en el selector de función, elige **`setup`** y pulsa **Ejecutar**.
-2. Te pedirá **autorizar permisos** (planillas, correo, conexión externa). Acepta.
-   - Si aparece "Google no verificó esta app" → *Configuración avanzada* →
-     *Ir a Reservas Vive Quintay (no seguro)*. Es tu propio script, es seguro.
-3. Abre **Ver → Registros** (o `Ctrl+Enter`): verás el enlace de la planilla
-   creada ("Reservas Vive Quintay — Libro Mayor"). Ya quedó guardada.
+1. Elige la función **`setup`** → **Ejecutar** → autoriza permisos. Crea la
+   planilla y deja los valores por defecto (PRECIO, correo, PWA_URL).
+2. En **⚙️ Configuración del proyecto → Propiedades del script**, agrega:
 
-Esto deja configurado, por defecto, el **sandbox de TUU** y el correo
-`nosectm@gmail.com`. Puedes revisarlas/editarlas en
-**Configuración del proyecto ⚙️ → Propiedades del script**:
+   | Propiedad | Valor |
+   |-----------|-------|
+   | `MP_ACCESS_TOKEN` | tu Access Token de **prueba** (`TEST-...`) |
 
-| Propiedad | Valor (sandbox) |
-|-----------|-----------------|
-| `TUU_ENV` | `dev` |
-| `TUU_ACCOUNT_ID` | `62224230` |
-| `TUU_SECRET` | (clave de prueba ya cargada) |
-| `TUU_SHOP_NAME` | `Vive Quintay SpA` |
-| `PRECIO` | `4000` |
-| `NOTIF_EMAIL` | `nosectm@gmail.com` |
-| `PWA_URL` | `https://vivequintay.github.io/reservas/` |
-| `SHEET_ID` | (lo puso `setup`, no tocar) |
+   (`PRECIO`, `SHOP_NAME`, `NOTIF_EMAIL`, `PWA_URL`, `SHEET_ID` ya quedaron.)
+
+3. Verifica las credenciales: ejecuta **`probarCredencialesMP`** y revisa el
+   registro → debe mostrar `✓ Cuenta: ... | país: MLC`. Luego ejecuta
+   **`diagnosticoMP`** → debe mostrar un `init_point`.
 
 ## 3. Publicar como aplicación web
 
-1. **Implementar → Nueva implementación**.
-2. Tipo (⚙️): **Aplicación web**.
-3. Configuración:
-   - **Ejecutar como:** Yo (tu cuenta).
-   - **Quién tiene acceso:** **Cualquier usuario** ← importante (TUU y la PWA
-     deben poder llamarla sin login).
-4. **Implementar** y copia la **URL de la aplicación web**
-   (`https://script.google.com/macros/s/……/exec`).
+1. **Implementar → Nueva implementación → Aplicación web**.
+2. **Ejecutar como:** Yo. **Quién tiene acceso:** **Cualquier usuario**.
+3. **Implementar** y copia la **URL** (`…/exec`).
 
-> Cada vez que edites el código, usa **Implementar → Gestionar implementaciones →
-> editar (✏️) → Nueva versión**, para que los cambios queden en la misma URL.
+> Al editar el código, usa **Gestionar implementaciones → ✏️ → Versión nueva**
+> para mantener la misma URL.
 
 ## 4. Conectar la PWA
 
-Pásame esa **URL de la aplicación web**. La pego en `index.html`
-(constante `BACKEND_URL`) y el botón "IR A PAGAR" pasa a crear el cobro real.
+Pásame la **URL `…/exec`**. La pego en `index.html` (`BACKEND_URL`) y el botón
+"IR A PAGAR" crea el cobro real en Mercado Pago.
 
-## 5. Probar (sandbox)
+## 5. Probar (modo prueba)
 
-1. Abre la PWA, completa una reserva y pulsa **IR A PAGAR**.
-2. Te redirige al checkout de TUU. Paga con una **tarjeta de prueba** de TUU.
-3. Verifica:
-   - Vuelves a la PWA con la pantalla de "reserva confirmada".
-   - Llega correo al cliente y a `nosectm@gmail.com`.
-   - En la planilla, la fila cambia de `pendiente` a `pagada`.
+1. En la PWA, haz una reserva → te lleva al checkout de Mercado Pago.
+2. Paga con una **tarjeta de prueba** de Mercado Pago (las ves en tu panel, en
+   *Cuentas de prueba* / *Tarjetas de prueba*; para aprobar usa el titular `APRO`).
+3. Verifica: vuelves a la PWA con "reserva confirmada", llegan los correos, y la
+   fila de la planilla pasa de `pendiente` a `pagada`.
 
-## 6. Pasar a producción (cuando todo funcione)
+## 6. Pasar a producción
 
-En producción TUU usa **RUT + clave secreta**, que el backend intercambia
-automáticamente por `account_id` + `secret_key` (vía `/token` y `/validatetoken`).
+Cambia en **Propiedades del script**:
+- `MP_ACCESS_TOKEN` → tu Access Token de **producción** (`APP_USR-...`).
 
-En **Propiedades del script** agrega/cambia:
-- `TUU_ENV` → `prod`
-- `RUT_COMERCIO` → el RUT de tu comercio (formato `12345678-9`)
-- `CLAVE_SECRETA` → tu clave secreta real de TUU
-
-> La clave secreta la escribes **tú** directamente aquí; nunca la compartas por chat.
-> Mientras existan `RUT_COMERCIO` + `CLAVE_SECRETA`, el backend ignora
-> `TUU_ACCOUNT_ID`/`TUU_SECRET` y usa el intercambio de producción.
-
-Luego ejecuta la función **`probarCredencialesProd`** y revisa el registro: debe
-mostrar el **nombre de tu comercio**, el `account_id` y `activo: 1`. Si aparece,
-las credenciales están correctas. Finalmente publica una **nueva versión** de la
-implementación y haz una reserva de prueba real (cargo real, reembolsable).
+Publica una **versión nueva**. Desde ahí los pagos son reales y caen en tu cuenta
+Mercado Pago.
 
 ---
 
 ### Notas técnicas (para Claude / mantenimiento)
 
-- **Firma TUU:** `ksort` de todo el payload, concatenar solo los pares cuya clave
-  empieza con `x_` (`clave+valor`, sin separadores), `HMAC-SHA256` con `TUU_SECRET`,
-  hex. Misma fórmula para firmar el request y para validar el webhook.
-- **Crear cobro:** POST JSON al endpoint de TUU con los campos `x_*` + `platform`,
-  `paymentMethod:"webpay"`, `secret:"18756627"` (constante de plataforma, no del
-  comercio), `dte_type:48` y `dte`. Respuesta 200 = **la URL de pago en texto plano**.
-- **Webhook:** TUU hace POST a `x_url_callback` (este mismo script) con
-  `x_result` ∈ {completed, failed, pending}. Responder 200 siempre; idempotente por
-  `x_reference`.
-- **Etapa 2b:** habilitar `escribirReservaEnFirestore()` en `confirmarReservaPagada()`,
-  usando una cuenta de servicio del proyecto `vive-quintay-spa`.
+- **Crear cobro:** `POST api.mercadopago.com/checkout/preferences` con
+  `Authorization: Bearer {MP_ACCESS_TOKEN}`. Body con `items`
+  (title/quantity/unit_price/`currency_id:"CLP"`), `external_reference` (= ref de
+  la reserva), `back_urls`, `auto_return:"approved"`, `notification_url` (este
+  script). Respuesta trae **`init_point`** (URL de pago) y `sandbox_init_point`.
+- **Webhook:** MP hace POST a `notification_url` con `type=payment` y
+  `data.id=<id pago>` (en query o body). Apps Script **no expone headers**, así
+  que NO usamos `x-signature`; en su lugar **consultamos el pago**:
+  `GET /v1/payments/{id}` con Bearer (fuente de verdad, imposible de falsificar).
+  Si `status==="approved"` → reserva `pagada` (idempotente por `external_reference`).
+- **Etapa 2b:** habilitar `escribirReservaEnFirestore()` en
+  `confirmarReservaPagada()` con una cuenta de servicio del proyecto
+  `vive-quintay-spa`.

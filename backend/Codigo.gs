@@ -1,44 +1,38 @@
 /**
  * ───────────────────────────────────────────────────────────────────────────
- *  BACKEND DE RESERVAS — VIVE QUINTAY SpA   (Google Apps Script)
+ *  BACKEND DE RESERVAS — VIVE QUINTAY SpA   (Google Apps Script + Mercado Pago)
  * ───────────────────────────────────────────────────────────────────────────
- *  Es el "cerebro" del pago. Hace dos cosas, ambas por doPost:
+ *  Es el "cerebro" del pago. Dos funciones, ambas por doPost:
  *
  *   1) CREAR COBRO  (lo llama la PWA al apretar "IR A PAGAR")
  *      - Recibe los datos de la reserva.
- *      - Lee el precio y las credenciales desde las Propiedades del Script
- *        (NUNCA del cliente → el monto no se puede adulterar).
- *      - Crea el Payment Intent en TUU (firmado HMAC-SHA256).
+ *      - Crea una "preferencia" de Checkout Pro en Mercado Pago
+ *        (monto leído del servidor → el cliente no puede adulterarlo).
  *      - Guarda la reserva como "pendiente" en la planilla (libro mayor).
- *      - Devuelve una página que redirige al checkout de TUU.
+ *      - Redirige al checkout de Mercado Pago (init_point).
  *
- *   2) WEBHOOK DE TUU  (lo llama TUU cuando el pago se concreta/falla)
- *      - Valida la firma del aviso (que sea TUU de verdad).
- *      - Es idempotente (TUU puede reintentar hasta 10 veces).
- *      - Si "completed": marca la reserva como PAGADA, envía los correos
- *        (a la empresa y al cliente) y —en la etapa 2b— escribe en Firestore.
- *      - Responde 200 SIEMPRE (aunque el pago haya fallado).
+ *   2) WEBHOOK DE MERCADO PAGO  (lo llama MP cuando cambia un pago)
+ *      - MP avisa con el id del pago. NO confiamos en el aviso: CONSULTAMOS
+ *        el pago a la API de MP con nuestro token (la fuente de verdad).
+ *        → imposible de falsificar (Apps Script no expone headers, así que
+ *          no usamos x-signature; la autenticación es la consulta firmada).
+ *      - Si el pago está "approved": marca la reserva PAGADA, envía correos
+ *        (a la empresa y al cliente) y —en 2b— escribe en Firestore.
+ *      - Responde 200 SIEMPRE.
  *
- *  Configurar en  Proyecto → Configuración → Propiedades del script:
- *    TUU_ENV          dev | prod          (sandbox o producción)
- *    TUU_ACCOUNT_ID   62224230            (sandbox; en prod el real)
- *    TUU_SECRET       (clave secreta del comercio para firmar)
- *    TUU_SHOP_NAME    Vive Quintay SpA
+ *  Propiedades del script (Proyecto → Configuración → Propiedades del script):
+ *    MP_ACCESS_TOKEN  (Access Token de Mercado Pago: TEST o producción)
  *    PRECIO           4000
+ *    SHOP_NAME        Vive Quintay SpA
  *    NOTIF_EMAIL      nosectm@gmail.com
  *    PWA_URL          https://vivequintay.github.io/reservas/
- *    SHEET_ID         (lo crea solo la función setup(), no tocar)
+ *    SHEET_ID         (lo crea solo setup(), no tocar)
  *
  *  Despliegue: ver INSTRUCCIONES.md
  * ───────────────────────────────────────────────────────────────────────────
  */
 
-// Constante fija de la plataforma TUU (NO es el secreto del comercio).
-var TUU_PLATFORM_SECRET = '18756627';
-var TUU_ENDPOINTS = {
-  dev:  'https://frontend-api.payment.haulmer.dev/v1/payment',
-  prod: 'https://core.payment.haulmer.com/api/v1/payment'
-};
+var MP_API = 'https://api.mercadopago.com';
 
 // ───────────────────────── Helpers de configuración ─────────────────────────
 function prop(k, def) {
@@ -46,33 +40,31 @@ function prop(k, def) {
   return (v === null || v === '') ? def : v;
 }
 
-// ───────────────────────── Punto de entrada (POST) ──────────────────────────
+function ok200() {
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+}
+
+// ───────────────────────── Puntos de entrada ────────────────────────────────
 function doPost(e) {
   try {
-    // TUU envía form-urlencoded con x_result + x_signature → es el webhook.
-    if (e && e.parameter && e.parameter.x_result) {
-      return manejarWebhook(e.parameter);
-    }
-    // Si no, es la PWA pidiendo crear el cobro.
-    return crearCobro(e);
+    var p = (e && e.parameter) ? e.parameter : {};
+    if (p.patente) return crearCobro(e);     // la PWA manda 'patente' → crear cobro
+    return manejarWebhookMP(e);              // si no, es notificación de MP
   } catch (err) {
-    // Nunca dejar caer el webhook (TUU espera 200). Para crear cobro, mostramos error.
     return ContentService.createTextOutput('ERROR: ' + err).setMimeType(ContentService.MimeType.TEXT);
   }
 }
 
-// Permite probar que el Web App está vivo abriéndolo en el navegador.
-function doGet() {
+function doGet(e) {
+  // MP a veces manda IPN por GET con topic/id.
+  var p = (e && e.parameter) ? e.parameter : {};
+  if ((p['data.id'] || p.id) && (p.type || p.topic)) return manejarWebhookMP(e);
   return ContentService.createTextOutput('Backend de reservas Vive Quintay — OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
 // ───────────────────────────── Crear cobro ──────────────────────────────────
 function crearCobro(e) {
   var p = (e && e.parameter) ? e.parameter : {};
-  // Si vino como JSON en el body (fetch), parsearlo.
-  if ((!p.patente) && e && e.postData && e.postData.contents) {
-    try { var j = JSON.parse(e.postData.contents); for (var k in j) p[k] = j[k]; } catch (_) {}
-  }
 
   var patente  = (p.patente  || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
   var nombre   = (p.nombre   || '').toString().trim();
@@ -86,215 +78,128 @@ function crearCobro(e) {
   }
 
   var precio = parseInt(prop('PRECIO', '4000'), 10);
-  var env    = prop('TUU_ENV', 'dev');
-  var endpoint = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
-  var creds     = obtenerCredencialesTUU(env);   // sandbox: directas | prod: RUT+clave → account_id/secret
-  var accountId = creds.accountId;
-  var secret    = creds.secret;
-  var shopName  = prop('TUU_SHOP_NAME', 'Vive Quintay SpA');
-  var pwaUrl    = prop('PWA_URL', '');
+  var token  = prop('MP_ACCESS_TOKEN', '');
+  var pwaUrl = prop('PWA_URL', '');
   var backendUrl = ScriptApp.getService().getUrl();
 
-  // Referencia única (id de la orden) — sirve para idempotencia y firma.
+  // Referencia única (external_reference) — vincula el pago con esta reserva.
   var ref = 'RES-' + fecha.replace(/-/g, '') + '-' + patente + '-' + Utilities.getUuid().substring(0, 8);
 
-  // Nombre/apellido a partir del nombre completo.
   var partes = nombre.split(/\s+/);
   var firstName = partes.shift();
   var lastName  = partes.join(' ') || firstName;
 
-  var data = {
-    platform: 'woocommerce',          // valor que TUU espera para este flujo
-    paymentMethod: 'webpay',
-    x_account_id: accountId,
-    x_amount: precio,
-    x_currency: 'CLP',
-    x_customer_email: email,
-    x_customer_first_name: firstName,
-    x_customer_last_name: lastName,
-    x_customer_phone: telefono,
-    x_description: 'Reserva de estacionamiento ' + fecha + ' (' + tramo + ')',
-    x_reference: ref,
-    x_shop_country: 'CL',
-    x_shop_name: shopName,
-    x_url_callback: backendUrl,                          // el webhook = este mismo script
-    x_url_cancel:   pwaUrl + '?estado=cancelado&',
-    x_url_complete: pwaUrl + '?estado=ok&',
-    secret: TUU_PLATFORM_SECRET,
-    dte_type: 48
+  var pref = {
+    items: [{
+      title: 'Reserva estacionamiento ' + fecha + ' (' + tramo + ')',
+      quantity: 1,
+      unit_price: precio,
+      currency_id: 'CLP'
+    }],
+    external_reference: ref,
+    payer: { name: firstName, surname: lastName, email: email },
+    back_urls: {
+      success: pwaUrl + '?estado=ok',
+      failure: pwaUrl + '?estado=fallo',
+      pending: pwaUrl + '?estado=pendiente'
+    },
+    auto_return: 'approved',
+    notification_url: backendUrl,            // el webhook = este mismo script
+    statement_descriptor: 'VIVE QUINTAY',
+    binary_mode: true,                       // aprobado o rechazado (sin "pendiente")
+    metadata: { patente: patente, fecha: fecha, tramo: tramo, telefono: telefono }
   };
 
-  // Firma: ksort de todo, concatenar solo claves x_ (clave+valor), HMAC-SHA256 con el secreto del comercio.
-  data.x_signature = firmarTUU(data, secret);
-  // dte se agrega DESPUÉS de firmar (no es campo x_).
-  data.dte = { net_amount: precio, exempt_amount: 1, type: 48 };
-
-  Logger.log('Secret len=%s | firma=%s', secret.length, data.x_signature);
-
-  var resp = UrlFetchApp.fetch(endpoint, {
+  var resp = UrlFetchApp.fetch(MP_API + '/checkout/preferences', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify(data),
-    muteHttpExceptions: true,
-    followRedirects: false   // un 3xx = TUU rechazó (firma inválida) → no seguirlo a ciegas
+    headers: { 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify(pref),
+    muteHttpExceptions: true
   });
 
   var code = resp.getResponseCode();
-  var body = (resp.getContentText() || '').trim();
+  var data = {};
+  try { data = JSON.parse(resp.getContentText()); } catch (_) {}
+  var url = data.init_point || data.sandbox_init_point || '';
 
-  if (code !== 200 || !/^https?:\/\//.test(body)) {
-    Logger.log('Respuesta TUU inesperada (%s): %s', code, body.substring(0, 200));
+  if ((code !== 200 && code !== 201) || !/^https?:\/\//.test(url)) {
+    Logger.log('MP preferencia inesperada (%s): %s', code, (resp.getContentText() || '').substring(0, 300));
     return paginaError('No se pudo iniciar el pago. Inténtalo nuevamente en unos minutos.');
   }
 
-  // Guardar la reserva como "pendiente" (libro mayor) — el webhook la actualizará.
   registrarReserva({
     ref: ref, patente: patente, nombre: nombre, email: email, telefono: telefono,
     fecha: fecha, tramo: tramo, monto: precio, estado: 'pendiente'
   });
 
-  // Redirigir el navegador al checkout de TUU.
-  return paginaRedirect(body);
+  return paginaRedirect(url);
 }
 
-// ───────────────────────────── Webhook TUU ──────────────────────────────────
-function manejarWebhook(params) {
-  var secret = obtenerCredencialesTUU(prop('TUU_ENV', 'dev')).secret;
-  var firmaOk = validarFirmaTUU(params, secret);
-  var ref = params.x_reference || '';
-  var resultado = (params.x_result || '').toLowerCase();
+// ─────────────────────── Webhook Mercado Pago ───────────────────────────────
+function manejarWebhookMP(e) {
+  var p = (e && e.parameter) ? e.parameter : {};
+  var tipo = (p.type || p.topic || '').toLowerCase();
+  var id = p['data.id'] || p.id || '';
 
-  Logger.log('Webhook TUU ref=%s result=%s firmaOk=%s', ref, resultado, firmaOk);
-
-  // Si la firma no valida, NO procesamos (posible suplantación), pero respondemos 200
-  // para que TUU no reintente eternamente. Queda en el log para revisión.
-  if (!firmaOk) {
-    Logger.log('FIRMA INVÁLIDA en webhook para ref=%s', ref);
-    return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+  // Por si MP lo envía en el cuerpo JSON.
+  if ((!id || !tipo) && e && e.postData && e.postData.contents) {
+    try {
+      var b = JSON.parse(e.postData.contents);
+      tipo = (b.type || b.topic || tipo || '').toLowerCase();
+      if (b.data && b.data.id) id = b.data.id;
+    } catch (_) {}
   }
 
-  if (resultado === 'completed') {
-    confirmarReservaPagada(ref, params);
-  } else if (resultado === 'failed') {
-    actualizarEstadoReserva(ref, 'fallido');
-  } // 'pending' → no hacemos nada todavía
+  Logger.log('Webhook MP tipo=%s id=%s', tipo, id);
 
-  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+  // Solo pagos (ignoramos merchant_order, etc.).
+  if (tipo && tipo.indexOf('payment') < 0) return ok200();
+  if (!id) return ok200();
+
+  // Fuente de verdad: consultar el pago a la API de MP con nuestro token.
+  var token = prop('MP_ACCESS_TOKEN', '');
+  var resp = UrlFetchApp.fetch(MP_API + '/v1/payments/' + encodeURIComponent(id), {
+    method: 'get',
+    headers: { 'Authorization': 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) {
+    Logger.log('No se pudo consultar el pago %s (%s)', id, resp.getResponseCode());
+    return ok200();
+  }
+  var pago = {};
+  try { pago = JSON.parse(resp.getContentText()); } catch (_) { return ok200(); }
+
+  Logger.log('Pago %s estado=%s ref=%s monto=%s', id, pago.status, pago.external_reference, pago.transaction_amount);
+
+  if (pago.status === 'approved') {
+    confirmarReservaPagada(pago.external_reference, pago);
+  } else if (pago.status === 'rejected' || pago.status === 'cancelled') {
+    actualizarEstadoReserva(pago.external_reference, 'fallido');
+  }
+  return ok200();
 }
 
-function confirmarReservaPagada(ref, params) {
+function confirmarReservaPagada(ref, pago) {
+  if (!ref) { Logger.log('Pago sin external_reference'); return; }
   var fila = buscarReserva(ref);
   if (!fila) { Logger.log('No se encontró la reserva %s', ref); return; }
 
-  // Idempotencia: si ya está pagada, no repetir correos.
+  // Idempotencia: si ya está pagada, no repetir.
   if (fila.estado === 'pagada') { Logger.log('Reserva %s ya estaba pagada (idempotente)', ref); return; }
 
-  actualizarEstadoReserva(ref, 'pagada');
+  // Verificación extra: el monto pagado coincide con el de la reserva.
+  if (pago && pago.transaction_amount && Number(pago.transaction_amount) < Number(fila.monto)) {
+    Logger.log('Monto pagado (%s) menor al esperado (%s) para %s', pago.transaction_amount, fila.monto, ref);
+    return;
+  }
 
-  // Correos de confirmación.
+  actualizarEstadoReserva(ref, 'pagada');
   enviarCorreos(fila);
 
   // ── Etapa 2b: escribir en Firestore como "Pagada" para que aparezca en caja ──
   // escribirReservaEnFirestore(fila);   // (se habilita en 2b con la cuenta de servicio)
-}
-
-// ─────────────────────────────── Firma TUU ──────────────────────────────────
-function firmarTUU(data, secret) {
-  var claves = Object.keys(data).sort();      // ksort
-  var msg = '';
-  for (var i = 0; i < claves.length; i++) {
-    var k = claves[i];
-    if (k.indexOf('x_') === 0 && k !== 'x_signature') msg += k + data[k];
-  }
-  var raw = Utilities.computeHmacSha256Signature(msg, secret);
-  return raw.map(function (b) {
-    var v = (b < 0 ? b + 256 : b).toString(16);
-    return v.length === 1 ? '0' + v : v;
-  }).join('');
-}
-
-function validarFirmaTUU(params, secret) {
-  var recibida = params.x_signature || '';
-  if (!recibida) return false;
-  var calculada = firmarTUU(params, secret);
-  return recibida === calculada;
-}
-
-// ─────────────────── Credenciales TUU (sandbox vs producción) ────────────────
-// Si hay RUT_COMERCIO + CLAVE_SECRETA → producción: intercambia por
-// account_id + secret_key vía /token y /validatetoken (con caché de 6 h).
-// Si no → usa TUU_ACCOUNT_ID + TUU_SECRET directos (sandbox).
-function obtenerCredencialesTUU(env) {
-  var base  = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
-  var rut   = prop('RUT_COMERCIO', '');
-  var clave = prop('CLAVE_SECRETA', '');
-
-  if (!rut || !clave) {
-    return { accountId: prop('TUU_ACCOUNT_ID', ''), secret: prop('TUU_SECRET', '') };
-  }
-
-  var cache = CacheService.getScriptCache();
-  var key = 'tuucreds_' + env + '_' + rut;
-  var hit = cache.get(key);
-  if (hit) return JSON.parse(hit);
-
-  // 1) getToken (GET /token/{rut}, Bearer clave) → JWT
-  var rTok = UrlFetchApp.fetch(base + '/token/' + encodeURIComponent(rut), {
-    method: 'get',
-    headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
-    muteHttpExceptions: true
-  });
-  if (rTok.getResponseCode() !== 200) {
-    throw new Error('TUU getToken ' + rTok.getResponseCode() + ': ' + rTok.getContentText().substring(0, 150));
-  }
-  var token = JSON.parse(rTok.getContentText()).token;
-
-  // 2) validateToken (POST /validatetoken {token}) → account_id + secret_key
-  var rVal = UrlFetchApp.fetch(base + '/validatetoken', {
-    method: 'post', contentType: 'application/json',
-    headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
-    payload: JSON.stringify({ token: token }), muteHttpExceptions: true
-  });
-  if (rVal.getResponseCode() !== 200) {
-    throw new Error('TUU validateToken ' + rVal.getResponseCode() + ': ' + rVal.getContentText().substring(0, 150));
-  }
-  var info = JSON.parse(rVal.getContentText());
-  var creds = { accountId: info.account_id, secret: info.secret_key };
-  cache.put(key, JSON.stringify(creds), 21600); // 6 h
-  return creds;
-}
-
-// Verifica tus credenciales REALES de producción. Configura primero en
-// Propiedades del script: TUU_ENV=prod, RUT_COMERCIO, CLAVE_SECRETA.
-// Debe mostrar el NOMBRE de tu comercio y is_active=1.
-function probarCredencialesProd() {
-  var env = prop('TUU_ENV', 'dev');
-  var rut = prop('RUT_COMERCIO', '');
-  var clave = prop('CLAVE_SECRETA', '');
-  Logger.log('Ambiente: %s | RUT_COMERCIO: %s | CLAVE_SECRETA presente: %s',
-             env, rut || '(vacío)', clave ? 'sí' : 'NO');
-  if (!rut || !clave) { Logger.log('Falta RUT_COMERCIO o CLAVE_SECRETA en Propiedades del script.'); return; }
-
-  CacheService.getScriptCache().remove('tuucreds_' + env + '_' + rut);
-  var base = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
-  try {
-    var rTok = UrlFetchApp.fetch(base + '/token/' + encodeURIComponent(rut), {
-      method: 'get', headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave }, muteHttpExceptions: true });
-    Logger.log('getToken código: %s', rTok.getResponseCode());
-    if (rTok.getResponseCode() !== 200) { Logger.log('Respuesta: %s', rTok.getContentText().substring(0, 200)); return; }
-    var token = JSON.parse(rTok.getContentText()).token;
-    var rVal = UrlFetchApp.fetch(base + '/validatetoken', {
-      method: 'post', contentType: 'application/json',
-      headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
-      payload: JSON.stringify({ token: token }), muteHttpExceptions: true });
-    Logger.log('validateToken código: %s', rVal.getResponseCode());
-    if (rVal.getResponseCode() !== 200) { Logger.log('Respuesta: %s', rVal.getContentText().substring(0, 200)); return; }
-    var info = JSON.parse(rVal.getContentText());
-    Logger.log('✓ Comercio: %s | account_id: %s | secret_key largo: %s | activo: %s',
-               info.name, info.account_id, String(info.secret_key || '').length, info.is_active);
-  } catch (err) {
-    Logger.log('✗ Error: %s', err);
-  }
 }
 
 // ─────────────────────── Planilla (libro mayor) ─────────────────────────────
@@ -326,6 +231,7 @@ function buscarReserva(ref) {
 }
 
 function actualizarEstadoReserva(ref, estado) {
+  if (!ref) return;
   var hoja = getHoja();
   var datos = hoja.getDataRange().getValues();
   for (var i = 1; i < datos.length; i++) {
@@ -340,10 +246,8 @@ function actualizarEstadoReserva(ref, estado) {
 // ─────────────────────────────── Correos ────────────────────────────────────
 function enviarCorreos(r) {
   var fmt = function (n) { return '$' + Number(n).toLocaleString('es-CL'); };
-  var fechaBonita = r.fecha;
   var notif = prop('NOTIF_EMAIL', '');
 
-  // Al cliente
   if (r.email) {
     MailApp.sendEmail({
       to: r.email,
@@ -353,7 +257,7 @@ function enviarCorreos(r) {
         '<h2 style="color:#00913B">¡Reserva confirmada! ✅</h2>' +
         '<p>Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
-        fila('Patente', r.patente) + fila('Día', fechaBonita) + fila('Tramo horario', r.tramo) +
+        fila('Patente', r.patente) + fila('Día', r.fecha) + fila('Tramo horario', r.tramo) +
         fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
         '</table>' +
         '<p style="margin-top:18px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
@@ -361,7 +265,6 @@ function enviarCorreos(r) {
     });
   }
 
-  // A la empresa
   if (notif) {
     MailApp.sendEmail({
       to: notif,
@@ -409,47 +312,41 @@ function paginaError(msg) {
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// ─────────────────────── Diagnóstico (ejecutar para depurar) ────────────────
-// Calcula la firma sobre un caso FIJO conocido y la compara con la esperada,
-// revisa el largo de la clave secreta, y consulta a TUU. Ver el resultado en
-// Ejecuciones / registro.
-function diagnostico() {
-  var secret = prop('TUU_SECRET', '');
-  Logger.log('1) Largo de TUU_SECRET: %s  (debe ser 128)', secret.length);
-
-  var data = {
-    platform: 'woocommerce', paymentMethod: 'webpay', x_account_id: '62224230',
-    x_amount: 4000, x_currency: 'CLP', x_customer_email: 'prueba@ejemplo.cl',
-    x_customer_first_name: 'Juan', x_customer_last_name: 'Perez', x_customer_phone: '+56912345678',
-    x_description: 'Reserva', x_reference: 'RES-DIAG-FIJO',
-    x_shop_country: 'CL', x_shop_name: 'Vive Quintay SpA',
-    x_url_callback: 'https://example.com/cb', x_url_cancel: 'https://example.com/cancel',
-    x_url_complete: 'https://example.com/complete', secret: '18756627', dte_type: 48
-  };
-  var sig = firmarTUU(data, secret);
-  var esperada = '99ca5660f16a142d35a0784267ea6cc63eb1cb83cbd666aab00e26aadf9ce1f8';
-  Logger.log('2) Firma calculada: %s', sig);
-  Logger.log('3) Firma esperada:  %s', esperada);
-  Logger.log('4) ¿COINCIDEN?: %s', (sig === esperada));
-
-  data.x_signature = sig;
-  data.dte = { net_amount: 4000, exempt_amount: 1, type: 48 };
-  var resp = UrlFetchApp.fetch(TUU_ENDPOINTS.dev, {
-    method: 'post', contentType: 'application/json',
-    payload: JSON.stringify(data), muteHttpExceptions: true, followRedirects: false
+// ─────────────────── Diagnóstico de credenciales (ejecutar a mano) ───────────
+// Verifica que el MP_ACCESS_TOKEN sea válido y muestra de qué cuenta es.
+function probarCredencialesMP() {
+  var token = prop('MP_ACCESS_TOKEN', '');
+  Logger.log('MP_ACCESS_TOKEN presente: %s (largo %s)', token ? 'sí' : 'NO', token.length);
+  if (!token) { Logger.log('Falta MP_ACCESS_TOKEN en Propiedades del script.'); return; }
+  var r = UrlFetchApp.fetch(MP_API + '/users/me', {
+    method: 'get', headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true
   });
-  Logger.log('5) TUU código: %s', resp.getResponseCode());
-  Logger.log('6) TUU respuesta: %s', (resp.getContentText() || '').substring(0, 200));
+  Logger.log('users/me código: %s', r.getResponseCode());
+  if (r.getResponseCode() !== 200) { Logger.log('Respuesta: %s', r.getContentText().substring(0, 200)); return; }
+  var u = JSON.parse(r.getContentText());
+  Logger.log('✓ Cuenta: %s | nickname: %s | país: %s | email: %s | id: %s',
+             (u.first_name || '') + ' ' + (u.last_name || ''), u.nickname, u.site_id, u.email, u.id);
+  Logger.log('Modo: %s', (String(token).indexOf('TEST') === 0 || String(token).indexOf('APP_USR') < 0) ? 'parece PRUEBA' : 'parece PRODUCCIÓN');
 }
 
-// Fuerza las credenciales de sandbox (úsala si diagnostico() dice que la clave
-// quedó con largo distinto de 128 — la sobreescribe con el valor correcto).
-function forzarCredencialesSandbox() {
-  var sp = PropertiesService.getScriptProperties();
-  sp.setProperty('TUU_ENV', 'dev');
-  sp.setProperty('TUU_ACCOUNT_ID', '62224230');
-  sp.setProperty('TUU_SECRET', 'yAk0dXTJLQzkeEWODsQWVpPX0bn7ND50qwoQrXgqqNiUyEpgxIPxPtoCgKeLNeh1upTw72JZx5O9x5IaAtPIGUAVcMNcsUSg3M0M8tgWdUb4F8qkS8I7rHpOUmZqzvfS');
-  Logger.log('Credenciales sandbox restablecidas. Largo TUU_SECRET: %s', sp.getProperty('TUU_SECRET').length);
+// Crea una preferencia de prueba y muestra el init_point (sin cobrar nada real en TEST).
+function diagnosticoMP() {
+  var token = prop('MP_ACCESS_TOKEN', '');
+  var pref = {
+    items: [{ title: 'Reserva de prueba', quantity: 1, unit_price: parseInt(prop('PRECIO', '4000'), 10), currency_id: 'CLP' }],
+    external_reference: 'RES-DIAG-' + Utilities.getUuid().substring(0, 8),
+    back_urls: { success: prop('PWA_URL', '') + '?estado=ok' },
+    auto_return: 'approved'
+  };
+  var r = UrlFetchApp.fetch(MP_API + '/checkout/preferences', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token }, payload: JSON.stringify(pref), muteHttpExceptions: true
+  });
+  Logger.log('Crear preferencia código: %s', r.getResponseCode());
+  var d = {}; try { d = JSON.parse(r.getContentText()); } catch (_) {}
+  Logger.log('init_point: %s', d.init_point || '(none)');
+  Logger.log('sandbox_init_point: %s', d.sandbox_init_point || '(none)');
+  if (!d.init_point) Logger.log('Respuesta: %s', (r.getContentText() || '').substring(0, 300));
 }
 
 // ─────────────────────── Setup (ejecutar UNA vez) ───────────────────────────
@@ -466,16 +363,12 @@ function setup() {
   } else {
     Logger.log('Ya existe SHEET_ID: %s', sp.getProperty('SHEET_ID'));
   }
-  // Valores por defecto si faltan (no pisa los existentes).
   var defaults = {
-    TUU_ENV: 'dev',
-    TUU_ACCOUNT_ID: '62224230',
-    TUU_SECRET: 'yAk0dXTJLQzkeEWODsQWVpPX0bn7ND50qwoQrXgqqNiUyEpgxIPxPtoCgKeLNeh1upTw72JZx5O9x5IaAtPIGUAVcMNcsUSg3M0M8tgWdUb4F8qkS8I7rHpOUmZqzvfS',
-    TUU_SHOP_NAME: 'Vive Quintay SpA',
     PRECIO: '4000',
+    SHOP_NAME: 'Vive Quintay SpA',
     NOTIF_EMAIL: 'nosectm@gmail.com',
     PWA_URL: 'https://vivequintay.github.io/reservas/'
   };
   for (var k in defaults) if (!sp.getProperty(k)) sp.setProperty(k, defaults[k]);
-  Logger.log('Setup completo. Propiedades: %s', JSON.stringify(sp.getProperties()));
+  Logger.log('Setup completo. Falta poner MP_ACCESS_TOKEN. Propiedades: %s', JSON.stringify(sp.getProperties()));
 }

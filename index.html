@@ -735,22 +735,22 @@
             form.submit();
         }
 
-        // ─────────── Regreso desde TUU (x_url_complete / x_url_cancel) ───────────
+        // ─────────── Regreso desde Mercado Pago (back_urls) ───────────
         function manejarRegresoPago() {
             const params = new URLSearchParams(window.location.search);
-            const estado = params.get("estado");
-            const result = (params.get("x_result") || "").toLowerCase();
-            if (!estado && !result) return false;
-
-            const pagado = result === "completed" || (estado === "ok" && result !== "failed");
-            const cancelado = estado === "cancelado" || result === "failed";
+            const estado = (params.get("estado") || "").toLowerCase();
+            if (!estado) return false;
 
             irAPantalla('ok');
-            if (pagado) {
+            if (estado === "ok") {
                 document.getElementById("ok-titulo").textContent = "¡Reserva confirmada! ✅";
                 document.getElementById("ok-texto").innerHTML =
                     "Tu pago fue recibido. Te enviamos la confirmación por correo con el día y el tramo.<br><br>¡Te esperamos en Vive Quintay!";
-            } else if (cancelado) {
+            } else if (estado === "pendiente") {
+                document.getElementById("ok-titulo").textContent = "Pago en revisión ⏳";
+                document.getElementById("ok-texto").innerHTML =
+                    "Tu pago está siendo confirmado. Apenas se apruebe, te llegará el correo con tu reserva.";
+            } else { // fallo / cancelado
                 document.querySelector("#screen-ok .ok-icon").style.fill = "#FF8A80";
                 document.getElementById("ok-titulo").textContent = "Pago no completado";
                 document.getElementById("ok-texto").innerHTML =
