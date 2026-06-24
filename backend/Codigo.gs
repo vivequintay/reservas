@@ -48,10 +48,19 @@ function ok200() {
 function doPost(e) {
   try {
     var p = (e && e.parameter) ? e.parameter : {};
-    if (p.patente) return crearCobro(e);     // la PWA manda 'patente' → crear cobro
-    return manejarWebhookMP(e);              // si no, es notificación de MP
+    // Form POST (respaldo sin CORS): 'patente' en los parámetros → respuesta HTML que redirige.
+    if (p.patente) return crearCobro(p, 'html');
+    // fetch desde la PWA: JSON en el cuerpo → respuesta JSON (sin banner de Apps Script).
+    if (e && e.postData && e.postData.contents) {
+      var b = {};
+      try { b = JSON.parse(e.postData.contents); } catch (_) {}
+      if (b && b.patente) return crearCobro(b, 'json');
+    }
+    // Si no, es notificación de Mercado Pago.
+    return manejarWebhookMP(e);
   } catch (err) {
-    return ContentService.createTextOutput('ERROR: ' + err).setMimeType(ContentService.MimeType.TEXT);
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -63,8 +72,9 @@ function doGet(e) {
 }
 
 // ───────────────────────────── Crear cobro ──────────────────────────────────
-function crearCobro(e) {
-  var p = (e && e.parameter) ? e.parameter : {};
+// modo: 'json' (la PWA hace fetch y redirige sola → sin banner) | 'html' (respaldo)
+function crearCobro(datos, modo) {
+  var p = datos || {};
 
   var patente  = (p.patente  || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
   var nombre   = (p.nombre   || '').toString().trim();
@@ -74,7 +84,7 @@ function crearCobro(e) {
   var tramo    = (p.tramo    || '').toString().trim();
 
   if (!patente || !nombre || !email || !fecha || !tramo) {
-    return paginaError('Faltan datos de la reserva. Vuelve atrás e inténtalo de nuevo.');
+    return respuestaError(modo, 'Faltan datos de la reserva. Vuelve atrás e inténtalo de nuevo.');
   }
 
   var precio = parseInt(prop('PRECIO', '4000'), 10);
@@ -125,7 +135,7 @@ function crearCobro(e) {
 
   if ((code !== 200 && code !== 201) || !/^https?:\/\//.test(url)) {
     Logger.log('MP preferencia inesperada (%s): %s', code, (resp.getContentText() || '').substring(0, 300));
-    return paginaError('No se pudo iniciar el pago. Inténtalo nuevamente en unos minutos.');
+    return respuestaError(modo, 'No se pudo iniciar el pago. Inténtalo nuevamente en unos minutos.');
   }
 
   registrarReserva({
@@ -133,7 +143,24 @@ function crearCobro(e) {
     fecha: fecha, tramo: tramo, monto: precio, estado: 'pendiente'
   });
 
+  return respuestaExito(modo, url);
+}
+
+// Respuesta según el modo: JSON (la PWA redirige) o HTML (respaldo, redirige el server).
+function respuestaExito(modo, url) {
+  if (modo === 'json') {
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, url: url }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   return paginaRedirect(url);
+}
+
+function respuestaError(modo, msg) {
+  if (modo === 'json') {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: msg }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return paginaError(msg);
 }
 
 // ─────────────────────── Webhook Mercado Pago ───────────────────────────────
@@ -266,6 +293,8 @@ function enviarCorreos(r) {
   }
 
   if (notif) {
+    var sheetId = prop('SHEET_ID', '');
+    var linkPlanilla = sheetId ? 'https://docs.google.com/spreadsheets/d/' + sheetId + '/edit' : '';
     MailApp.sendEmail({
       to: notif,
       subject: 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + r.fecha + ')',
@@ -276,9 +305,19 @@ function enviarCorreos(r) {
         fila('Patente', r.patente) + fila('Día', r.fecha) + fila('Tramo', r.tramo) +
         fila('Nombre', r.nombre) + fila('Email', r.email) + fila('Teléfono', r.telefono) +
         fila('Monto', fmt(r.monto)) + fila('Ref', r.ref) +
-        '</table></div>'
+        '</table>' +
+        (linkPlanilla ? '<p style="margin-top:14px"><a href="' + linkPlanilla + '">📋 Ver bitácora completa de reservas</a></p>' : '') +
+        '</div>'
     });
   }
+}
+
+// Muestra en el registro el link directo a tu planilla/bitácora de reservas.
+function verPlanilla() {
+  var id = prop('SHEET_ID', '');
+  if (!id) { Logger.log('No hay SHEET_ID. Ejecuta setup() primero.'); return; }
+  Logger.log('📋 Tu bitácora de reservas:');
+  Logger.log('https://docs.google.com/spreadsheets/d/' + id + '/edit');
 }
 
 function fila(k, v) {

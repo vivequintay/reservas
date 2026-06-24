@@ -706,7 +706,7 @@
         // Mientras esté vacía, el botón muestra una vista previa sin cobrar.
         const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyQelJiyHIFjK3lhKEbqlGofs7pdBj2hnemfvRw1entcrlNM2KhDwErHhli1f393AGC/exec";
 
-        function pagar() {
+        async function pagar() {
             if (!BACKEND_URL) {
                 // Aún sin backend conectado: vista previa del flujo.
                 irAPantalla('ok');
@@ -716,19 +716,47 @@
                     `<strong style="color:#00E0D0">${reserva.patente}</strong> · ${fechaBonita(reserva.fecha)} · ${reserva.tramo}`;
                 return;
             }
-            // Enviamos la reserva al backend mediante un POST de formulario (navegación
-            // de nivel superior → sin problemas de CORS). El backend crea el cobro en TUU
-            // y redirige el navegador al checkout.
-            const form = document.createElement("form");
-            form.method = "POST";
-            form.action = BACKEND_URL;
-            const campos = {
+
+            const payload = {
                 patente: reserva.patente, nombre: reserva.nombre, email: reserva.email,
                 telefono: reserva.telefono, fecha: reserva.fecha, tramo: reserva.tramo
             };
-            for (const k in campos) {
+
+            const btn = document.querySelector("#screen-3 .btn-pagar");
+            const btnHtml = btn ? btn.innerHTML : "";
+            if (btn) { btn.disabled = true; btn.innerHTML = "Conectando con el pago…"; }
+
+            // Camino principal: fetch → el backend devuelve la URL en JSON → redirigimos
+            // nosotros mismos. Así el cliente NUNCA ve una página de Apps Script (sin banner).
+            // Petición "simple" (sin cabeceras personalizadas) para evitar preflight CORS.
+            let url = null;
+            try {
+                const r = await fetch(BACKEND_URL, { method: "POST", body: JSON.stringify(payload) });
+                const data = await r.json();
+                if (data && data.ok && data.url) {
+                    url = data.url;
+                } else if (data && data.error) {
+                    if (btn) { btn.disabled = false; btn.innerHTML = btnHtml; }
+                    document.getElementById("error-datos") && (document.getElementById("error-datos").textContent = "");
+                    alert("No se pudo iniciar el pago: " + data.error);
+                    return;
+                }
+            } catch (e) {
+                // CORS/red: caemos al respaldo por formulario (redirige el backend).
+            }
+
+            if (url) { window.location.href = url; return; }
+            enviarPorFormulario(payload);
+        }
+
+        // Respaldo: POST de formulario (navegación de nivel superior, sin CORS).
+        function enviarPorFormulario(payload) {
+            const form = document.createElement("form");
+            form.method = "POST";
+            form.action = BACKEND_URL;
+            for (const k in payload) {
                 const inp = document.createElement("input");
-                inp.type = "hidden"; inp.name = k; inp.value = campos[k];
+                inp.type = "hidden"; inp.name = k; inp.value = payload[k];
                 form.appendChild(inp);
             }
             document.body.appendChild(form);
