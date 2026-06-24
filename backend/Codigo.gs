@@ -225,8 +225,81 @@ function confirmarReservaPagada(ref, pago) {
   actualizarEstadoReserva(ref, 'pagada');
   enviarCorreos(fila);
 
-  // ── Etapa 2b: escribir en Firestore como "Pagada" para que aparezca en caja ──
-  // escribirReservaEnFirestore(fila);   // (se habilita en 2b con la cuenta de servicio)
+  // ── Etapa 2b: escribir en Firestore para que el escritorio capte la patente ──
+  try { escribirReservaEnFirestore(fila); }
+  catch (err) { Logger.log('Error escribiendo en Firestore (la reserva igual quedó pagada): %s', err); }
+}
+
+// ─────────────────────── Firebase / Firestore (etapa 2b) ─────────────────────
+// Autentica como cuenta de servicio (JWT → OAuth) y escribe la reserva pagada
+// en la colección 'reservas'. Reutiliza el mismo firebase-key.json del escritorio.
+// Configurar en Propiedades del script:
+//   FIREBASE_SA       = (TODO el contenido del archivo firebase-key.json)
+//   FIREBASE_PROJECT  = vive-quintay-spa   (opcional, ya es el valor por defecto)
+function firebaseToken_() {
+  var saStr = prop('FIREBASE_SA', '');
+  if (!saStr) throw new Error('Falta FIREBASE_SA (pega el contenido de firebase-key.json).');
+  var sa = JSON.parse(saStr);
+  var now = Math.floor(Date.now() / 1000);
+  var enc = function (o) { return Utilities.base64EncodeWebSafe(JSON.stringify(o)).replace(/=+$/, ''); };
+  var toSign = enc({ alg: 'RS256', typ: 'JWT' }) + '.' + enc({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600
+  });
+  var sig = Utilities.base64EncodeWebSafe(
+    Utilities.computeRsaSha256Signature(toSign, sa.private_key)).replace(/=+$/, '');
+  var resp = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post',
+    payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: toSign + '.' + sig },
+    muteHttpExceptions: true
+  });
+  var d = {}; try { d = JSON.parse(resp.getContentText()); } catch (_) {}
+  if (!d.access_token) throw new Error('OAuth Firebase falló: ' + resp.getContentText().substring(0, 200));
+  return d.access_token;
+}
+
+function escribirReservaEnFirestore(r) {
+  if (!prop('FIREBASE_SA', '')) {
+    Logger.log('FIREBASE_SA no configurado → no se escribe en Firestore (2b pendiente).');
+    return;
+  }
+  var projectId = prop('FIREBASE_PROJECT', 'vive-quintay-spa');
+  var token = firebaseToken_();
+  var docId = String(r.ref);
+  var url = 'https://firestore.googleapis.com/v1/projects/' + projectId +
+            '/databases/(default)/documents/reservas/' + encodeURIComponent(docId);
+  var body = { fields: {
+    patente:  { stringValue: String(r.patente) },
+    nombre:   { stringValue: String(r.nombre) },
+    email:    { stringValue: String(r.email) },
+    telefono: { stringValue: String(r.telefono || '') },
+    fecha:    { stringValue: String(r.fecha) },          // YYYY-MM-DD del día reservado
+    tramo:    { stringValue: String(r.tramo) },
+    monto:    { integerValue: String(r.monto) },
+    estado:   { stringValue: 'Pagada' },
+    tipo:     { stringValue: 'Pase Diario' },
+    ref:      { stringValue: docId },
+    creada:   { timestampValue: new Date().toISOString() }
+  }};
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'patch', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify(body), muteHttpExceptions: true
+  });
+  Logger.log('Firestore reservas/%s → %s', docId, resp.getResponseCode());
+  if (resp.getResponseCode() >= 300) Logger.log('Detalle: %s', resp.getContentText().substring(0, 250));
+}
+
+// Prueba la escritura en Firestore SIN hacer un pago (crea una reserva ficticia).
+function probarFirestore() {
+  escribirReservaEnFirestore({
+    ref: 'RES-TEST-' + Utilities.getUuid().substring(0, 8),
+    patente: 'TEST99', nombre: 'Prueba Firestore', email: 'prueba@ejemplo.cl',
+    telefono: '', fecha: '2026-07-30', tramo: '12:00 - 13:00', monto: 4000
+  });
+  Logger.log('Listo. Revisa la colección "reservas" en la consola de Firebase.');
 }
 
 // ─────────────────────── Planilla (libro mayor) ─────────────────────────────
