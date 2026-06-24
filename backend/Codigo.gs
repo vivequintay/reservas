@@ -44,6 +44,13 @@ function ok200() {
   return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
+// Normaliza una fecha a "YYYY-MM-DD". La planilla de Google a veces devuelve la
+// fecha como objeto Date (no como el texto original) → la reconvertimos.
+function fechaISO_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'America/Santiago', 'yyyy-MM-dd');
+  return String(v == null ? '' : v);
+}
+
 // ───────────────────────── Puntos de entrada ────────────────────────────────
 function doPost(e) {
   try {
@@ -275,7 +282,7 @@ function escribirReservaEnFirestore(r) {
     nombre:   { stringValue: String(r.nombre) },
     email:    { stringValue: String(r.email) },
     telefono: { stringValue: String(r.telefono || '') },
-    fecha:    { stringValue: String(r.fecha) },          // YYYY-MM-DD del día reservado
+    fecha:    { stringValue: fechaISO_(r.fecha) },        // YYYY-MM-DD del día reservado
     tramo:    { stringValue: String(r.tramo) },
     monto:    { integerValue: String(r.monto) },
     estado:   { stringValue: 'Pagada' },
@@ -357,7 +364,7 @@ function enviarCorreos(r) {
         '<h2 style="color:#00913B">¡Reserva confirmada! ✅</h2>' +
         '<p>Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
-        fila('Patente', r.patente) + fila('Día', r.fecha) + fila('Tramo horario', r.tramo) +
+        fila('Patente', r.patente) + fila('Día', fechaISO_(r.fecha)) + fila('Tramo horario', r.tramo) +
         fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
         '</table>' +
         '<p style="margin-top:18px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
@@ -375,7 +382,7 @@ function enviarCorreos(r) {
         '<div style="font-family:Arial,sans-serif">' +
         '<h3>Nueva reserva pagada</h3>' +
         '<table style="border-collapse:collapse">' +
-        fila('Patente', r.patente) + fila('Día', r.fecha) + fila('Tramo', r.tramo) +
+        fila('Patente', r.patente) + fila('Día', fechaISO_(r.fecha)) + fila('Tramo', r.tramo) +
         fila('Nombre', r.nombre) + fila('Email', r.email) + fila('Teléfono', r.telefono) +
         fila('Monto', fmt(r.monto)) + fila('Ref', r.ref) +
         '</table>' +
