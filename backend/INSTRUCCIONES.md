@@ -68,12 +68,22 @@ Pásame esa **URL de la aplicación web**. La pego en `index.html`
 
 ## 6. Pasar a producción (cuando todo funcione)
 
-En **Propiedades del script** cambia:
-- `TUU_ENV` → `prod`
-- `TUU_ACCOUNT_ID` → el real de tu cuenta TUU
-- `TUU_SECRET` → la clave secreta real del comercio
+En producción TUU usa **RUT + clave secreta**, que el backend intercambia
+automáticamente por `account_id` + `secret_key` (vía `/token` y `/validatetoken`).
 
-…y publica una **nueva versión** de la implementación.
+En **Propiedades del script** agrega/cambia:
+- `TUU_ENV` → `prod`
+- `RUT_COMERCIO` → el RUT de tu comercio (formato `12345678-9`)
+- `CLAVE_SECRETA` → tu clave secreta real de TUU
+
+> La clave secreta la escribes **tú** directamente aquí; nunca la compartas por chat.
+> Mientras existan `RUT_COMERCIO` + `CLAVE_SECRETA`, el backend ignora
+> `TUU_ACCOUNT_ID`/`TUU_SECRET` y usa el intercambio de producción.
+
+Luego ejecuta la función **`probarCredencialesProd`** y revisa el registro: debe
+mostrar el **nombre de tu comercio**, el `account_id` y `activo: 1`. Si aparece,
+las credenciales están correctas. Finalmente publica una **nueva versión** de la
+implementación y haz una reserva de prueba real (cargo real, reembolsable).
 
 ---
 

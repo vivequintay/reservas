@@ -88,8 +88,9 @@ function crearCobro(e) {
   var precio = parseInt(prop('PRECIO', '4000'), 10);
   var env    = prop('TUU_ENV', 'dev');
   var endpoint = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
-  var accountId = prop('TUU_ACCOUNT_ID', '');
-  var secret    = prop('TUU_SECRET', '');
+  var creds     = obtenerCredencialesTUU(env);   // sandbox: directas | prod: RUT+clave → account_id/secret
+  var accountId = creds.accountId;
+  var secret    = creds.secret;
   var shopName  = prop('TUU_SHOP_NAME', 'Vive Quintay SpA');
   var pwaUrl    = prop('PWA_URL', '');
   var backendUrl = ScriptApp.getService().getUrl();
@@ -158,7 +159,7 @@ function crearCobro(e) {
 
 // ───────────────────────────── Webhook TUU ──────────────────────────────────
 function manejarWebhook(params) {
-  var secret = prop('TUU_SECRET', '');
+  var secret = obtenerCredencialesTUU(prop('TUU_ENV', 'dev')).secret;
   var firmaOk = validarFirmaTUU(params, secret);
   var ref = params.x_reference || '';
   var resultado = (params.x_result || '').toLowerCase();
@@ -217,6 +218,83 @@ function validarFirmaTUU(params, secret) {
   if (!recibida) return false;
   var calculada = firmarTUU(params, secret);
   return recibida === calculada;
+}
+
+// ─────────────────── Credenciales TUU (sandbox vs producción) ────────────────
+// Si hay RUT_COMERCIO + CLAVE_SECRETA → producción: intercambia por
+// account_id + secret_key vía /token y /validatetoken (con caché de 6 h).
+// Si no → usa TUU_ACCOUNT_ID + TUU_SECRET directos (sandbox).
+function obtenerCredencialesTUU(env) {
+  var base  = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
+  var rut   = prop('RUT_COMERCIO', '');
+  var clave = prop('CLAVE_SECRETA', '');
+
+  if (!rut || !clave) {
+    return { accountId: prop('TUU_ACCOUNT_ID', ''), secret: prop('TUU_SECRET', '') };
+  }
+
+  var cache = CacheService.getScriptCache();
+  var key = 'tuucreds_' + env + '_' + rut;
+  var hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+
+  // 1) getToken (GET /token/{rut}, Bearer clave) → JWT
+  var rTok = UrlFetchApp.fetch(base + '/token/' + encodeURIComponent(rut), {
+    method: 'get',
+    headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
+    muteHttpExceptions: true
+  });
+  if (rTok.getResponseCode() !== 200) {
+    throw new Error('TUU getToken ' + rTok.getResponseCode() + ': ' + rTok.getContentText().substring(0, 150));
+  }
+  var token = JSON.parse(rTok.getContentText()).token;
+
+  // 2) validateToken (POST /validatetoken {token}) → account_id + secret_key
+  var rVal = UrlFetchApp.fetch(base + '/validatetoken', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
+    payload: JSON.stringify({ token: token }), muteHttpExceptions: true
+  });
+  if (rVal.getResponseCode() !== 200) {
+    throw new Error('TUU validateToken ' + rVal.getResponseCode() + ': ' + rVal.getContentText().substring(0, 150));
+  }
+  var info = JSON.parse(rVal.getContentText());
+  var creds = { accountId: info.account_id, secret: info.secret_key };
+  cache.put(key, JSON.stringify(creds), 21600); // 6 h
+  return creds;
+}
+
+// Verifica tus credenciales REALES de producción. Configura primero en
+// Propiedades del script: TUU_ENV=prod, RUT_COMERCIO, CLAVE_SECRETA.
+// Debe mostrar el NOMBRE de tu comercio y is_active=1.
+function probarCredencialesProd() {
+  var env = prop('TUU_ENV', 'dev');
+  var rut = prop('RUT_COMERCIO', '');
+  var clave = prop('CLAVE_SECRETA', '');
+  Logger.log('Ambiente: %s | RUT_COMERCIO: %s | CLAVE_SECRETA presente: %s',
+             env, rut || '(vacío)', clave ? 'sí' : 'NO');
+  if (!rut || !clave) { Logger.log('Falta RUT_COMERCIO o CLAVE_SECRETA en Propiedades del script.'); return; }
+
+  CacheService.getScriptCache().remove('tuucreds_' + env + '_' + rut);
+  var base = TUU_ENDPOINTS[env] || TUU_ENDPOINTS.dev;
+  try {
+    var rTok = UrlFetchApp.fetch(base + '/token/' + encodeURIComponent(rut), {
+      method: 'get', headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave }, muteHttpExceptions: true });
+    Logger.log('getToken código: %s', rTok.getResponseCode());
+    if (rTok.getResponseCode() !== 200) { Logger.log('Respuesta: %s', rTok.getContentText().substring(0, 200)); return; }
+    var token = JSON.parse(rTok.getContentText()).token;
+    var rVal = UrlFetchApp.fetch(base + '/validatetoken', {
+      method: 'post', contentType: 'application/json',
+      headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + clave },
+      payload: JSON.stringify({ token: token }), muteHttpExceptions: true });
+    Logger.log('validateToken código: %s', rVal.getResponseCode());
+    if (rVal.getResponseCode() !== 200) { Logger.log('Respuesta: %s', rVal.getContentText().substring(0, 200)); return; }
+    var info = JSON.parse(rVal.getContentText());
+    Logger.log('✓ Comercio: %s | account_id: %s | secret_key largo: %s | activo: %s',
+               info.name, info.account_id, String(info.secret_key || '').length, info.is_active);
+  } catch (err) {
+    Logger.log('✗ Error: %s', err);
+  }
 }
 
 // ─────────────────────── Planilla (libro mayor) ─────────────────────────────
