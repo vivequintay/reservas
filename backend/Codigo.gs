@@ -356,10 +356,7 @@ function enviarCorreos(r) {
   var notif = prop('NOTIF_EMAIL', '');
 
   if (r.email) {
-    MailApp.sendEmail({
-      to: r.email,
-      subject: 'Confirmación de tu reserva — Vive Quintay SpA',
-      htmlBody:
+    var htmlCliente =
         '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#0A2F4F">' +
         '<h2 style="color:#00913B">¡Reserva confirmada! ✅</h2>' +
         '<p>Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
@@ -368,17 +365,14 @@ function enviarCorreos(r) {
         fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
         '</table>' +
         '<p style="margin-top:18px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
-        '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>'
-    });
+        '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>';
+    enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente);
   }
 
   if (notif) {
     var sheetId = prop('SHEET_ID', '');
     var linkPlanilla = sheetId ? 'https://docs.google.com/spreadsheets/d/' + sheetId + '/edit' : '';
-    MailApp.sendEmail({
-      to: notif,
-      subject: 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + r.fecha + ')',
-      htmlBody:
+    var htmlEmpresa =
         '<div style="font-family:Arial,sans-serif">' +
         '<h3>Nueva reserva pagada</h3>' +
         '<table style="border-collapse:collapse">' +
@@ -387,8 +381,29 @@ function enviarCorreos(r) {
         fila('Monto', fmt(r.monto)) + fila('Ref', r.ref) +
         '</table>' +
         (linkPlanilla ? '<p style="margin-top:14px"><a href="' + linkPlanilla + '">📋 Ver bitácora completa de reservas</a></p>' : '') +
-        '</div>'
-    });
+        '</div>';
+    enviarMail_(notif, 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + fechaISO_(r.fecha) + ')', htmlEmpresa);
+  }
+}
+
+// Envía un correo respetando el remitente configurado en Propiedades del script:
+//   MAIL_NAME = nombre visible del remitente (def: "Vive Quintay SpA")
+//   MAIL_FROM = dirección remitente (OPCIONAL; debe ser un alias verificado en
+//               Gmail → Configuración → Cuentas → "Enviar como"). Si está, el
+//               correo sale DESDE esa dirección, no la personal. Requiere permiso Gmail.
+//   REPLY_TO  = dirección de respuesta (OPCIONAL).
+function enviarMail_(to, subject, html) {
+  var mailName = prop('MAIL_NAME', 'Vive Quintay SpA');
+  var fromAddr = prop('MAIL_FROM', '');
+  var replyTo  = prop('REPLY_TO', '');
+  if (fromAddr) {
+    var optsG = { htmlBody: html, name: mailName, from: fromAddr };
+    if (replyTo) optsG.replyTo = replyTo;
+    GmailApp.sendEmail(to, subject, '', optsG);
+  } else {
+    var optsM = { to: to, subject: subject, htmlBody: html, name: mailName };
+    if (replyTo) optsM.replyTo = replyTo;
+    MailApp.sendEmail(optsM);
   }
 }
 
