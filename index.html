@@ -81,7 +81,7 @@
             background: rgba(255,255,255,0.18);
             transition: background 0.25s, transform 0.25s;
         }
-        .step-dot.active { background: #00E0D0; transform: scale(1.25); }
+        .step-dot.active { background: #8FB7D9; transform: scale(1.25); }
         .step-dot.done   { background: #52D45A; }
 
         /* ─── Screens ─── */
@@ -93,7 +93,7 @@
         }
 
         h2.titulo {
-            color: #00E0D0;
+            color: #8FB7D9;
             margin: 0 0 6px 0;
             letter-spacing: 1px;
             font-weight: 800;
@@ -134,7 +134,7 @@
             transition: box-shadow 0.2s ease, border-color 0.2s ease;
             margin-bottom: 18px;
         }
-        input:focus { border-color: #00E0D0; box-shadow: 0 0 0 4px rgba(0,224,208,0.22); }
+        input:focus { border-color: #8FB7D9; box-shadow: 0 0 0 4px rgba(143,183,217,0.22); }
 
         /* La caja grande de patente (pantalla 1) */
         #inputPatente {
@@ -142,7 +142,7 @@
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 4px;
-            border: 2px solid #00E0D0;
+            border: 2px solid #8FB7D9;
             padding: 22px 18px;
         }
         .hint {
@@ -228,7 +228,7 @@
             font-weight: 800;
             letter-spacing: 1px;
             text-transform: capitalize;
-            color: #00E0D0;
+            color: #8FB7D9;
         }
         .cal-grid {
             display: grid;
@@ -284,9 +284,9 @@
             color: white;
         }
         .tramo.seleccionado {
-            border-color: #00E0D0;
+            border-color: #8FB7D9;
             background: #0A4763;
-            color: #00E0D0;
+            color: #8FB7D9;
         }
 
         /* ─── Resumen ─── */
@@ -310,7 +310,7 @@
         .resumen-total {
             margin-top: 10px;
             padding-top: 14px;
-            border-top: 2px solid rgba(0,224,208,0.3);
+            border-top: 2px solid rgba(143,183,217,0.3);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -329,6 +329,44 @@
             line-height: 1.4;
         }
         .lock { vertical-align: middle; }
+
+        /* ─── Términos y condiciones ─── */
+        .terminos {
+            background: #0D3B5C;
+            border-radius: 14px;
+            padding: 4px 16px;
+            margin: 4px 0 12px 0;
+            text-align: left;
+        }
+        .terminos > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 12px 0;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #8FB7D9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .terminos > summary::-webkit-details-marker { display: none; }
+        .terminos > summary::after { content: '▾'; transition: transform 0.2s; }
+        .terminos[open] > summary::after { transform: rotate(180deg); }
+        .terminos ul { margin: 0 0 12px 0; padding-left: 18px; }
+        .terminos li {
+            font-size: 0.82rem; line-height: 1.5;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 8px;
+        }
+        .terminos li b { color: #fff; }
+        .acepto {
+            display: flex; align-items: center; gap: 10px;
+            text-align: left; cursor: pointer;
+            font-size: 0.88rem; color: rgba(255,255,255,0.75);
+            margin: 0 4px 16px;
+        }
+        .acepto input { width: 22px; height: 22px; flex-shrink: 0; accent-color: #00C853; cursor: pointer; }
+        .acepto b { color: #fff; }
 
         /* ─── Medios de pago ─── */
         .medios-pago { text-align: center; }
@@ -470,7 +508,7 @@
     <!-- ─── Pantalla 2: Datos + fecha + tramo ─── -->
     <section id="screen-2" class="screen">
         <h2 class="titulo">Tus datos y el día</h2>
-        <p class="subtitulo">Patente: <strong id="patente-eco" style="color:#00E0D0;letter-spacing:2px;"></strong></p>
+        <p class="subtitulo">Patente: <strong id="patente-eco" style="color:#8FB7D9;letter-spacing:2px;"></strong></p>
 
         <label class="campo">Nombre completo</label>
         <input type="text" id="inputNombre" placeholder="Tu nombre" autocomplete="name" />
@@ -507,6 +545,25 @@
 
         <div class="resumen" id="resumen"></div>
 
+        <details class="terminos">
+            <summary>Términos y condiciones de la reserva</summary>
+            <ul>
+                <li>Tu reserva es un <b>Pase Diario</b>: pagas y el lugar queda reservado para el día elegido, con <b>derecho a reingreso</b> durante la jornada usando tu código QR.</li>
+                <li>El pago se procesa con <b>Mercado Pago</b>. La reserva se confirma <b>solo si el pago es aprobado</b>.</li>
+                <li><b>No hay devoluciones</b>: una vez pagada, la reserva no se reembolsa.</li>
+                <li>Llega dentro del <b>tramo horario elegido</b>. Si tienes un imprevisto, avísanos por WhatsApp al menos <b>1 hora antes</b> del inicio de tu tramo para reagendar. Pasado el tramo sin llegar ni avisar, la reserva se cancela.</li>
+                <li><b>No necesitas pasar por caja</b>: tu QR es tu comprobante y tu pase.</li>
+                <li>Avísanos tu llegada por <b>WhatsApp 10 minutos antes</b>.</li>
+                <li>Si el pago falla, Mercado Pago no retiene el cobro. Ante dudas, escríbenos con tu N° de reserva.</li>
+                <li><b>Cómo llegar</b>: te enviamos la ubicación en el correo de confirmación.</li>
+            </ul>
+        </details>
+
+        <label class="acepto">
+            <input type="checkbox" id="chk-terminos" onchange="toggleAcepto()">
+            <span>He leído y acepto los <b>términos y condiciones</b>.</span>
+        </label>
+
         <div class="medios-pago sobre-boton">
             <div class="logos">
                 <img class="mp" src="assets/pay/mercadopago.svg" alt="Mercado Pago" title="Mercado Pago">
@@ -516,7 +573,7 @@
             </div>
         </div>
 
-        <button class="btn-pagar" onclick="pagar()">
+        <button class="btn-pagar" id="btn-pagar" onclick="pagar()" disabled>
             <span class="lock">🔒</span> IR A PAGAR
         </button>
         <button class="btn-volver" onclick="irAPantalla(2)">VOLVER</button>
@@ -731,7 +788,15 @@
             reserva.telefono = tel;
 
             renderResumen();
+            // Reiniciar aceptación de términos cada vez que se llega a pagar.
+            document.getElementById("chk-terminos").checked = false;
+            document.getElementById("btn-pagar").disabled = true;
             irAPantalla(3);
+        }
+
+        // Habilita "IR A PAGAR" solo si se aceptaron los términos.
+        function toggleAcepto() {
+            document.getElementById("btn-pagar").disabled = !document.getElementById("chk-terminos").checked;
         }
 
         function renderResumen() {
@@ -752,13 +817,14 @@
         const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyQelJiyHIFjK3lhKEbqlGofs7pdBj2hnemfvRw1entcrlNM2KhDwErHhli1f393AGC/exec";
 
         async function pagar() {
+            if (!document.getElementById("chk-terminos").checked) return;  // resguardo términos
             if (!BACKEND_URL) {
                 // Aún sin backend conectado: vista previa del flujo.
                 irAPantalla('ok');
                 document.getElementById("ok-titulo").textContent = "Backend en preparación 🔧";
                 document.getElementById("ok-texto").innerHTML =
                     "El flujo visual está listo. Falta conectar la URL del backend de pago.<br><br>Reserva preparada:<br>" +
-                    `<strong style="color:#00E0D0">${reserva.patente}</strong> · ${fechaBonita(reserva.fecha)} · ${reserva.tramo}`;
+                    `<strong style="color:#8FB7D9">${reserva.patente}</strong> · ${fechaBonita(reserva.fecha)} · ${reserva.tramo}`;
                 return;
             }
 
