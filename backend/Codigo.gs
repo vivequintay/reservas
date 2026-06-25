@@ -62,6 +62,7 @@ function doPost(e) {
       var b = {};
       try { b = JSON.parse(e.postData.contents); } catch (_) {}
       if (b && b.patente) return crearCobro(b, 'json');
+      if (b && b.accion) return manejarAdmin(b);   // panel de administración (con PIN)
     }
     // Si no, es notificación de Mercado Pago.
     return manejarWebhookMP(e);
@@ -94,7 +95,7 @@ function crearCobro(datos, modo) {
     return respuestaError(modo, 'Faltan datos de la reserva. Vuelve atrás e inténtalo de nuevo.');
   }
 
-  var precio = parseInt(prop('PRECIO', '4000'), 10);
+  var precio = precioVigente_();   // del documento config/reservas (lo edita el panel admin)
   var token  = prop('MP_ACCESS_TOKEN', '');
   var pwaUrl = prop('PWA_URL', '');
   var backendUrl = ScriptApp.getService().getUrl();
@@ -307,6 +308,105 @@ function probarFirestore() {
     telefono: '', fecha: '2026-07-30', tramo: '12:00 - 13:00', monto: 4000
   });
   Logger.log('Listo. Revisa la colección "reservas" en la consola de Firebase.');
+}
+
+// ═══════════════════════ PANEL DE ADMINISTRACIÓN (con PIN) ═══════════════════
+// Lo llama admin.html. Acciones: login | reservas | getConfig | saveConfig.
+// Seguridad: el PIN vive en la Script Property ADMIN_PIN (lo pones tú). Sin PIN
+// correcto no se devuelve nada (las reservas tienen datos personales).
+function manejarAdmin(b) {
+  var out = function (o) {
+    return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  };
+  var pinReal = prop('ADMIN_PIN', '');
+  var pinOk = (pinReal !== '' && String(b.pin || '') === pinReal);
+
+  if (b.accion === 'login') return out({ ok: pinOk, error: pinOk ? '' : 'PIN incorrecto' });
+  if (!pinOk) return out({ ok: false, error: 'PIN incorrecto' });
+
+  try {
+    if (b.accion === 'reservas')   return out({ ok: true, reservas: listarReservas_() });
+    if (b.accion === 'getConfig')  return out({ ok: true, config: getConfigReservas_() });
+    if (b.accion === 'saveConfig') { guardarConfigReservas_(b.config || {}); return out({ ok: true }); }
+    return out({ ok: false, error: 'acción desconocida' });
+  } catch (err) {
+    return out({ ok: false, error: String(err) });
+  }
+}
+
+// ── Precio vigente: del documento config/reservas (con fallback a PRECIO) ──
+function precioVigente_() {
+  try {
+    var cfg = getConfigReservas_();
+    if (cfg && cfg.precio) return parseInt(cfg.precio, 10);
+  } catch (e) {}
+  return parseInt(prop('PRECIO', '4000'), 10);
+}
+
+// ── Helpers Firestore REST (usan la cuenta de servicio vía firebaseToken_) ──
+function fsBase_() {
+  return 'https://firestore.googleapis.com/v1/projects/' +
+         prop('FIREBASE_PROJECT', 'vive-quintay-spa') + '/databases/(default)/documents/';
+}
+function fsValor_(v) {                 // JS → tipo Firestore
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'number') return (v % 1 === 0) ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(fsValor_) } };
+  return { stringValue: String(v) };
+}
+function fsLeer_(field) {               // tipo Firestore → JS
+  if (!field) return null;
+  if ('stringValue'   in field) return field.stringValue;
+  if ('integerValue'  in field) return parseInt(field.integerValue, 10);
+  if ('doubleValue'   in field) return field.doubleValue;
+  if ('booleanValue'  in field) return field.booleanValue;
+  if ('timestampValue'in field) return field.timestampValue;
+  if ('arrayValue'    in field) return ((field.arrayValue.values) || []).map(fsLeer_);
+  if ('mapValue'      in field) { var o = {}, f = field.mapValue.fields || {}; for (var k in f) o[k] = fsLeer_(f[k]); return o; }
+  return null;
+}
+function fsDocAObj_(doc) {
+  var o = {}, f = doc.fields || {};
+  for (var k in f) o[k] = fsLeer_(f[k]);
+  if (doc.name) o._id = doc.name.split('/').pop();
+  return o;
+}
+// Lee la planilla (libro mayor) → tiene TODO el ciclo: pendiente/pagada/fallido.
+function listarReservas_() {
+  var hoja = getHoja();
+  var datos = hoja.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < datos.length; i++) {
+    if (!datos[i][0]) continue;
+    var o = {};
+    for (var c = 0; c < COLS.length; c++) o[COLS[c]] = datos[i][c];
+    o.fecha = fechaISO_(o.fecha);   // por si la planilla la devolvió como Date
+    o.creada = o.creada ? String(o.creada) : '';
+    o.actualizada = o.actualizada ? String(o.actualizada) : '';
+    out.push(o);
+  }
+  return out;
+}
+function getConfigReservas_() {
+  var resp = UrlFetchApp.fetch(fsBase_() + 'config/reservas', {
+    method: 'get', headers: { 'Authorization': 'Bearer ' + firebaseToken_() }, muteHttpExceptions: true });
+  if (resp.getResponseCode() === 404) return {};
+  if (resp.getResponseCode() !== 200) throw new Error('Firestore getConfig ' + resp.getResponseCode());
+  return fsDocAObj_(JSON.parse(resp.getContentText()));
+}
+function guardarConfigReservas_(cfg) {
+  var fields = {};
+  if (cfg.precio !== undefined)            fields.precio = fsValor_(parseInt(cfg.precio, 10) || 0);
+  if (cfg.dias_semana !== undefined)       fields.dias_semana = fsValor_((cfg.dias_semana || []).map(Number));
+  if (cfg.fechas_bloqueadas !== undefined) fields.fechas_bloqueadas = fsValor_((cfg.fechas_bloqueadas || []).map(String));
+  if (cfg.tramos !== undefined)            fields.tramos = fsValor_((cfg.tramos || []).map(String));
+  var mask = Object.keys(fields).map(function (k) { return 'updateMask.fieldPaths=' + encodeURIComponent(k); }).join('&');
+  var resp = UrlFetchApp.fetch(fsBase_() + 'config/reservas?' + mask, {
+    method: 'patch', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + firebaseToken_() },
+    payload: JSON.stringify({ fields: fields }), muteHttpExceptions: true });
+  if (resp.getResponseCode() >= 300) throw new Error('Firestore saveConfig ' + resp.getResponseCode() + ': ' + resp.getContentText().substring(0, 150));
 }
 
 // ─────────────────────── Planilla (libro mayor) ─────────────────────────────

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIVE QUINTAY — Admin Reservas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            background:#0A2F4F; color:#fff; font-family:'Inter','Segoe UI',sans-serif;
+            margin:0; padding:18px; max-width:860px; margin:0 auto;
+        }
+        a { color:#00E0D0; }
+        .app-logo { width:48px; height:48px; border-radius:12px; display:block; margin:0 auto 8px; }
+        .brand { text-align:center; margin-bottom:18px; }
+        .brand .t {
+            font-size:1.3rem; font-weight:900; letter-spacing:2px;
+            background:linear-gradient(90deg,#7B9EFF,#52D45A);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+        }
+        .brand .s { font-size:.7rem; font-weight:700; letter-spacing:5px; color:rgba(255,255,255,.45); }
+
+        input, select, button { font-family:inherit; }
+        input[type=text], input[type=number], input[type=password], select {
+            background:#fdfdfd; color:#0A2F4F; border:2px solid #0D5575; border-radius:12px;
+            padding:12px 14px; font-size:1rem; font-weight:600; outline:none; width:100%;
+        }
+        input:focus, select:focus { border-color:#00E0D0; }
+        button { cursor:pointer; border:none; border-radius:12px; font-weight:800; }
+        .btn { background:linear-gradient(135deg,#00C853,#00913B); color:#fff; padding:14px; font-size:1rem; width:100%; }
+        .btn-sec { background:#0D3B5C; color:#fff; padding:10px 14px; }
+        .btn-mini { background:#0D3B5C; color:#FF8A80; padding:8px 12px; font-size:.85rem; }
+        .err { color:#FF8A80; font-weight:600; min-height:20px; margin:8px 0; text-align:center; }
+
+        /* Login */
+        #login { max-width:340px; margin:60px auto 0; text-align:center; }
+        #login p { color:rgba(255,255,255,.55); font-size:.9rem; margin-bottom:18px; }
+
+        /* Tabs */
+        .tabs { display:flex; gap:8px; margin-bottom:16px; }
+        .tab { flex:1; background:#0D3B5C; color:rgba(255,255,255,.6); padding:12px; text-align:center;
+               border-radius:12px; font-weight:800; letter-spacing:.5px; }
+        .tab.activo { background:#00E0D0; color:#062436; }
+        .vista { display:none; }
+        .vista.activa { display:block; }
+
+        /* Reservas */
+        .filtros { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+        .filtros select, .filtros input { width:auto; flex:1; min-width:120px; padding:10px 12px; }
+        .totales { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+        .kpi { background:#0D3B5C; border-radius:12px; padding:10px 16px; flex:1; min-width:120px; }
+        .kpi .n { font-size:1.5rem; font-weight:900; color:#00E0D0; }
+        .kpi .l { font-size:.7rem; color:rgba(255,255,255,.5); letter-spacing:1px; text-transform:uppercase; }
+        table { width:100%; border-collapse:collapse; }
+        th { text-align:left; font-size:.7rem; color:rgba(255,255,255,.45); text-transform:uppercase;
+             letter-spacing:.5px; padding:8px 6px; border-bottom:1px solid rgba(255,255,255,.1); }
+        td { padding:10px 6px; border-bottom:1px solid rgba(255,255,255,.06); font-size:.92rem; vertical-align:middle; }
+        td.pat { font-weight:800; color:#00E0D0; letter-spacing:1px; }
+        .badge { padding:3px 9px; border-radius:20px; font-size:.72rem; font-weight:800; white-space:nowrap; }
+        .b-pagada { background:#00C853; color:#062436; }
+        .b-ingresada { background:#42A5F5; color:#062436; }
+        .b-pendiente { background:#FF9800; color:#3a2400; }
+        .b-fallido { background:#D32F2F; color:#fff; }
+        .vacio { text-align:center; color:rgba(255,255,255,.45); padding:30px; }
+
+        /* Disponibilidad */
+        .seccion { background:#0D3B5C; border-radius:14px; padding:16px; margin-bottom:14px; }
+        .seccion h3 { margin:0 0 12px; font-size:.95rem; color:#00E0D0; letter-spacing:.5px; }
+        .dias { display:flex; gap:6px; flex-wrap:wrap; }
+        .dia { flex:1; min-width:40px; text-align:center; padding:12px 4px; border-radius:10px;
+               background:rgba(255,255,255,.06); font-weight:800; cursor:pointer; user-select:none; }
+        .dia.on { background:linear-gradient(135deg,#00C853,#00913B); }
+        .tramo-row { display:flex; gap:8px; margin-bottom:8px; }
+        .tramo-row input { flex:1; }
+        .cal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .cal-mes { font-weight:800; color:#00E0D0; text-transform:capitalize; }
+        .cal-nav { width:36px; height:36px; border-radius:9px; background:rgba(255,255,255,.08); color:#fff; font-size:1.1rem; }
+        .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+        .cal-dow { font-size:.65rem; color:rgba(255,255,255,.35); text-align:center; padding:3px 0; }
+        .cal-d { aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:9px;
+                 font-size:.85rem; font-weight:700; cursor:pointer; background:rgba(255,255,255,.05); }
+        .cal-d.vacia { background:transparent; cursor:default; }
+        .cal-d.bloq { background:#D32F2F; color:#fff; }
+        .cal-d.pasada { color:rgba(255,255,255,.2); cursor:not-allowed; }
+        .hint { font-size:.78rem; color:rgba(255,255,255,.45); margin-top:6px; }
+        .ok-msg { color:#52D45A; font-weight:700; text-align:center; min-height:20px; margin-top:8px; }
+        .row2 { display:flex; gap:10px; align-items:flex-end; }
+        .row2 > div { flex:1; }
+        label.lab { display:block; font-size:.72rem; color:rgba(255,255,255,.55); text-transform:uppercase; letter-spacing:1px; margin:0 0 6px 2px; }
+    </style>
+</head>
+<body>
+
+    <div class="brand">
+        <img src="logo.png" class="app-logo" alt="Logo">
+        <div class="t">VIVE QUINTAY</div>
+        <div class="s">ADMIN · RESERVAS</div>
+    </div>
+
+    <!-- ─── Login ─── -->
+    <section id="login">
+        <p>Ingresa el PIN de administración para gestionar las reservas y la disponibilidad.</p>
+        <input type="password" id="pin" placeholder="PIN" inputmode="numeric" autocomplete="off">
+        <div class="err" id="login-err"></div>
+        <button class="btn" onclick="entrar()">ENTRAR</button>
+    </section>
+
+    <!-- ─── Panel ─── -->
+    <section id="panel" style="display:none">
+        <div class="tabs">
+            <div class="tab activo" id="tab-res" onclick="verTab('res')">RESERVAS</div>
+            <div class="tab" id="tab-disp" onclick="verTab('disp')">DISPONIBILIDAD</div>
+        </div>
+
+        <!-- Reservas -->
+        <div class="vista activa" id="vista-res">
+            <div class="totales" id="kpis"></div>
+            <div class="filtros">
+                <select id="f-estado" onchange="render()">
+                    <option value="">Todos los estados</option>
+                    <option value="pagada">Pagada</option>
+                    <option value="ingresada">Ingresada</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="fallido">Fallida</option>
+                </select>
+                <input type="text" id="f-pat" placeholder="Buscar patente…" oninput="render()" style="text-transform:uppercase">
+                <button class="btn-sec" onclick="cargarReservas()">↻ Actualizar</button>
+            </div>
+            <div id="tabla-res"></div>
+        </div>
+
+        <!-- Disponibilidad -->
+        <div class="vista" id="vista-disp">
+            <div class="seccion">
+                <h3>Precio de la reserva</h3>
+                <div class="row2">
+                    <div>
+                        <label class="lab">Precio (CLP)</label>
+                        <input type="number" id="precio" min="0" step="100" placeholder="4000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="seccion">
+                <h3>Días de la semana habilitados</h3>
+                <div class="dias" id="dias"></div>
+                <div class="hint">Toca para activar/desactivar. Verde = se puede reservar ese día de la semana.</div>
+            </div>
+
+            <div class="seccion">
+                <h3>Tramos horarios</h3>
+                <div id="tramos"></div>
+                <button class="btn-sec" onclick="agregarTramo('')">+ Agregar tramo</button>
+                <div class="hint">Ej.: <b>12:00 - 13:00</b>. El cliente elige uno al reservar.</div>
+            </div>
+
+            <div class="seccion">
+                <h3>Feriados / días cerrados</h3>
+                <div class="cal-head">
+                    <button class="cal-nav" onclick="calMes(-1)">‹</button>
+                    <span class="cal-mes" id="cal-mes"></span>
+                    <button class="cal-nav" onclick="calMes(1)">›</button>
+                </div>
+                <div class="cal-grid" id="cal-grid"></div>
+                <div class="hint">Toca un día para <b style="color:#FF8A80">cerrarlo</b> (no se podrá reservar), aunque sea día hábil.</div>
+            </div>
+
+            <button class="btn" onclick="guardar()">GUARDAR DISPONIBILIDAD</button>
+            <div class="ok-msg" id="disp-msg"></div>
+        </div>
+    </section>
+
+    <script>
+        const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyQelJiyHIFjK3lhKEbqlGofs7pdBj2hnemfvRw1entcrlNM2KhDwErHhli1f393AGC/exec";
+        let PIN = sessionStorage.getItem('admin_pin') || "";
+        let RESERVAS = [];
+        let CFG = { precio:4000, dias_semana:[0,1,2,3,4,5,6], fechas_bloqueadas:[], tramos:[] };
+
+        async function api(accion, extra) {
+            const body = Object.assign({ accion, pin: PIN }, extra || {});
+            const r = await fetch(BACKEND_URL, { method:"POST", body: JSON.stringify(body) });
+            return await r.json();
+        }
+
+        // ─── Login ───
+        async function entrar() {
+            const pin = document.getElementById('pin').value.trim();
+            document.getElementById('login-err').textContent = "";
+            if (!pin) return;
+            PIN = pin;
+            const r = await api('login').catch(() => ({ ok:false, error:'Sin conexión' }));
+            if (r.ok) {
+                sessionStorage.setItem('admin_pin', PIN);
+                abrirPanel();
+            } else {
+                document.getElementById('login-err').textContent = r.error || 'PIN incorrecto';
+            }
+        }
+        document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+
+        function abrirPanel() {
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('panel').style.display = 'block';
+            cargarReservas();
+            cargarConfig();
+        }
+
+        function verTab(t) {
+            document.getElementById('tab-res').classList.toggle('activo', t === 'res');
+            document.getElementById('tab-disp').classList.toggle('activo', t === 'disp');
+            document.getElementById('vista-res').classList.toggle('activa', t === 'res');
+            document.getElementById('vista-disp').classList.toggle('activa', t === 'disp');
+        }
+
+        // ─── Reservas ───
+        async function cargarReservas() {
+            document.getElementById('tabla-res').innerHTML = "<div class='vacio'>Cargando…</div>";
+            const r = await api('reservas').catch(() => ({ ok:false }));
+            if (!r.ok) { document.getElementById('tabla-res').innerHTML = "<div class='vacio'>Error al cargar.</div>"; return; }
+            RESERVAS = r.reservas || [];
+            render();
+        }
+
+        function badge(estado) {
+            const e = (estado || '').toLowerCase();
+            const cls = e === 'pagada' ? 'b-pagada' : e === 'ingresada' ? 'b-ingresada'
+                      : e === 'fallido' ? 'b-fallido' : 'b-pendiente';
+            return `<span class="badge ${cls}">${(estado||'—').toUpperCase()}</span>`;
+        }
+        const fmt = n => '$' + Number(n||0).toLocaleString('es-CL');
+
+        function render() {
+            const fe = document.getElementById('f-estado').value.toLowerCase();
+            const fp = document.getElementById('f-pat').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+            let list = RESERVAS.slice().sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+            if (fe) list = list.filter(r => (r.estado||'').toLowerCase() === fe);
+            if (fp) list = list.filter(r => (r.patente||'').toUpperCase().includes(fp));
+
+            // KPIs (sobre TODO, no filtrado)
+            const pagadas = RESERVAS.filter(r => ['pagada','ingresada'].includes((r.estado||'').toLowerCase()));
+            const recauda = pagadas.reduce((s,r) => s + Number(r.monto||0), 0);
+            document.getElementById('kpis').innerHTML =
+                `<div class="kpi"><div class="n">${pagadas.length}</div><div class="l">Reservas pagadas</div></div>
+                 <div class="kpi"><div class="n">${fmt(recauda)}</div><div class="l">Recaudado</div></div>
+                 <div class="kpi"><div class="n">${RESERVAS.length}</div><div class="l">Total registros</div></div>`;
+
+            if (!list.length) { document.getElementById('tabla-res').innerHTML = "<div class='vacio'>Sin reservas.</div>"; return; }
+            let h = `<table><tr><th>Día</th><th>Tramo</th><th>Patente</th><th>Nombre</th><th>Estado</th><th>Monto</th></tr>`;
+            list.forEach(r => {
+                h += `<tr>
+                    <td>${r.fecha||'—'}</td><td>${r.tramo||'—'}</td>
+                    <td class="pat">${r.patente||'—'}</td>
+                    <td>${r.nombre||'—'}<br><span style="color:rgba(255,255,255,.4);font-size:.78rem">${r.email||''} ${r.telefono||''}</span></td>
+                    <td>${badge(r.estado)}</td><td>${fmt(r.monto)}</td></tr>`;
+            });
+            h += `</table>`;
+            document.getElementById('tabla-res').innerHTML = h;
+        }
+
+        // ─── Disponibilidad ───
+        const DIAS_NOMBRE = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+        async function cargarConfig() {
+            const r = await api('getConfig').catch(() => ({ ok:false }));
+            if (r.ok && r.config) {
+                CFG = {
+                    precio: r.config.precio || 4000,
+                    dias_semana: r.config.dias_semana || [0,1,2,3,4,5,6],
+                    fechas_bloqueadas: r.config.fechas_bloqueadas || [],
+                    tramos: (r.config.tramos && r.config.tramos.length) ? r.config.tramos
+                            : ["09:00 - 10:00","10:00 - 11:00","11:00 - 12:00","12:00 - 13:00","14:00 - 15:00","15:00 - 16:00","16:00 - 17:00","17:00 - 18:00"]
+                };
+            }
+            pintarConfig();
+        }
+        function pintarConfig() {
+            document.getElementById('precio').value = CFG.precio;
+            // días
+            const cont = document.getElementById('dias'); cont.innerHTML = "";
+            DIAS_NOMBRE.forEach((nom, i) => {
+                const d = document.createElement('div');
+                d.className = 'dia' + (CFG.dias_semana.includes(i) ? ' on' : '');
+                d.textContent = nom;
+                d.onclick = () => {
+                    if (CFG.dias_semana.includes(i)) CFG.dias_semana = CFG.dias_semana.filter(x => x !== i);
+                    else CFG.dias_semana.push(i);
+                    d.classList.toggle('on');
+                };
+                cont.appendChild(d);
+            });
+            // tramos
+            document.getElementById('tramos').innerHTML = "";
+            CFG.tramos.forEach(t => agregarTramo(t));
+            renderCal();
+        }
+        function agregarTramo(valor) {
+            const cont = document.getElementById('tramos');
+            const row = document.createElement('div'); row.className = 'tramo-row';
+            const inp = document.createElement('input'); inp.type = 'text'; inp.value = valor; inp.placeholder = '12:00 - 13:00';
+            const del = document.createElement('button'); del.className = 'btn-mini'; del.textContent = 'Quitar';
+            del.onclick = () => row.remove();
+            row.appendChild(inp); row.appendChild(del); cont.appendChild(row);
+        }
+
+        // Calendario de feriados
+        let calRef = new Date(); calRef.setDate(1);
+        const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+        const DOW = ['D','L','M','M','J','V','S'];
+        function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+        function calMes(n){ calRef.setMonth(calRef.getMonth()+n); renderCal(); }
+        function renderCal() {
+            document.getElementById('cal-mes').textContent = MESES[calRef.getMonth()] + ' ' + calRef.getFullYear();
+            const g = document.getElementById('cal-grid'); g.innerHTML = "";
+            DOW.forEach(d => { const c = document.createElement('div'); c.className='cal-dow'; c.textContent=d; g.appendChild(c); });
+            const off = new Date(calRef.getFullYear(), calRef.getMonth(), 1).getDay();
+            const ndias = new Date(calRef.getFullYear(), calRef.getMonth()+1, 0).getDate();
+            const hoy = new Date(); hoy.setHours(0,0,0,0);
+            for (let i=0;i<off;i++){ const v=document.createElement('div'); v.className='cal-d vacia'; g.appendChild(v); }
+            for (let d=1; d<=ndias; d++){
+                const fecha = new Date(calRef.getFullYear(), calRef.getMonth(), d);
+                const k = ymd(fecha);
+                const cel = document.createElement('div'); cel.textContent = d;
+                if (fecha < hoy) { cel.className = 'cal-d pasada'; }
+                else {
+                    cel.className = 'cal-d' + (CFG.fechas_bloqueadas.includes(k) ? ' bloq' : '');
+                    cel.onclick = () => {
+                        if (CFG.fechas_bloqueadas.includes(k)) CFG.fechas_bloqueadas = CFG.fechas_bloqueadas.filter(x => x !== k);
+                        else CFG.fechas_bloqueadas.push(k);
+                        renderCal();
+                    };
+                }
+                g.appendChild(cel);
+            }
+        }
+
+        async function guardar() {
+            const msg = document.getElementById('disp-msg'); msg.style.color = '#52D45A'; msg.textContent = 'Guardando…';
+            const tramos = Array.from(document.querySelectorAll('#tramos input')).map(i => i.value.trim()).filter(Boolean);
+            const cfg = {
+                precio: parseInt(document.getElementById('precio').value, 10) || 0,
+                dias_semana: CFG.dias_semana.slice().sort(),
+                fechas_bloqueadas: CFG.fechas_bloqueadas.slice().sort(),
+                tramos: tramos
+            };
+            const r = await api('saveConfig', { config: cfg }).catch(() => ({ ok:false, error:'Sin conexión' }));
+            if (r.ok) { CFG.tramos = tramos; msg.textContent = '✓ Guardado. La PWA del cliente ya lo tomó.'; }
+            else { msg.style.color = '#FF8A80'; msg.textContent = 'Error: ' + (r.error || '—'); }
+        }
+
+        // ─── Auto-entrar si hay PIN guardado ───
+        if (PIN) { api('login').then(r => { if (r.ok) abrirPanel(); }).catch(()=>{}); }
+    </script>
+</body>
+</html>
