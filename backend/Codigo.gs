@@ -324,12 +324,24 @@ function manejarAdmin(b) {
   var out = function (o) {
     return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
   };
-  var pinReal = prop('ADMIN_PIN', '');
-  var pinOk = (pinReal !== '' && String(b.pin || '') === pinReal);
+  var adminPin = prop('ADMIN_PIN', '');
+  var opPin    = prop('OPERADOR_PIN', '');
+  var pin = String(b.pin || '');
+  var esAdmin    = (adminPin !== '' && pin === adminPin);
+  var esOperador = esAdmin || (opPin !== '' && pin === opPin);   // el admin también es operador
 
-  if (b.accion === 'login') return out({ ok: pinOk, error: pinOk ? '' : 'PIN incorrecto' });
-  if (!pinOk) return out({ ok: false, error: 'PIN incorrecto' });
+  // Login del panel admin (acceso total).
+  if (b.accion === 'login') return out({ ok: esAdmin, error: esAdmin ? '' : 'PIN incorrecto' });
+  // Verificador: login de operador + lista de reservas de HOY (solo lectura, solo el día).
+  if (b.accion === 'login_operador') return out({ ok: esOperador, error: esOperador ? '' : 'PIN incorrecto' });
+  if (b.accion === 'reservas_hoy') {
+    if (!esOperador) return out({ ok: false, error: 'PIN incorrecto' });
+    try { return out({ ok: true, reservas: reservasHoy_() }); }
+    catch (err) { return out({ ok: false, error: String(err) }); }
+  }
 
+  // Acciones del panel admin (requieren PIN de admin).
+  if (!esAdmin) return out({ ok: false, error: 'PIN incorrecto' });
   try {
     if (b.accion === 'reservas')   return out({ ok: true, reservas: listarReservas_() });
     if (b.accion === 'getConfig')  return out({ ok: true, config: getConfigReservas_() });
@@ -338,6 +350,14 @@ function manejarAdmin(b) {
   } catch (err) {
     return out({ ok: false, error: String(err) });
   }
+}
+
+// Reservas PAGADAS de HOY (para el Verificador). Solo el día en curso.
+function reservasHoy_() {
+  var hoy = Utilities.formatDate(new Date(), 'America/Santiago', 'yyyy-MM-dd');
+  return listarReservas_().filter(function (r) {
+    return String(r.fecha) === hoy && String(r.estado).toLowerCase() === 'pagada';
+  });
 }
 
 // ── Precio vigente: del documento config/reservas (con fallback a PRECIO) ──
