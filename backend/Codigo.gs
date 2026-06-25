@@ -474,7 +474,7 @@ function enviarCorreos(r) {
   var notif = prop('NOTIF_EMAIL', '');
 
   if (r.email) {
-    var mapsUrl = prop('MAPS_URL', 'https://www.google.com/maps/search/?api=1&query=Vive+Quintay+Quintay+Chile');
+    var mapsUrl = prop('MAPS_URL', 'https://maps.app.goo.gl/rVd23QyZKCNFR8xz9');
     var qrBlob = null;
     try {
       var qrResp = UrlFetchApp.fetch('https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=' + encodeURIComponent(r.patente), { muteHttpExceptions: true });
