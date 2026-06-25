@@ -237,7 +237,10 @@ function confirmarReservaPagada(ref, pago) {
   }
 
   actualizarEstadoReserva(ref, 'pagada');
-  enviarCorreos(fila);
+
+  // Los correos NO deben bloquear el resto (lo importante es que quede en caja).
+  try { enviarCorreos(fila); }
+  catch (err) { Logger.log('Error enviando correos (la reserva igual quedó pagada): %s', err); }
 
   // ── Etapa 2b: escribir en Firestore para que el escritorio capte la patente ──
   try { escribirReservaEnFirestore(fila); }
@@ -512,7 +515,8 @@ function enviarCorreos(r) {
         '<p style="margin:16px 0"><a href="' + mapsUrl + '" style="color:#1565C0;font-weight:bold;text-decoration:none">📍 Cómo llegar (Google Maps)</a></p>' +
         '<p style="margin-top:14px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
         '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>';
-    enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, qrBlob ? { qrreserva: qrBlob } : null);
+    try { enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, qrBlob ? { qrreserva: qrBlob } : null); }
+    catch (e) { Logger.log('Correo al cliente falló (%s): %s', r.email, e); }
   }
 
   if (notif) {
@@ -528,7 +532,8 @@ function enviarCorreos(r) {
         '</table>' +
         (linkPlanilla ? '<p style="margin-top:14px"><a href="' + linkPlanilla + '">📋 Ver bitácora completa de reservas</a></p>' : '') +
         '</div>';
-    enviarMail_(notif, 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + fechaISO_(r.fecha) + ')', htmlEmpresa);
+    try { enviarMail_(notif, 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + fechaISO_(r.fecha) + ')', htmlEmpresa); }
+    catch (e) { Logger.log('Correo a la empresa falló: %s', e); }
   }
 }
 
@@ -542,17 +547,23 @@ function enviarMail_(to, subject, html, inlineImages) {
   var mailName = prop('MAIL_NAME', 'Vive Quintay SpA');
   var fromAddr = prop('MAIL_FROM', '');
   var replyTo  = prop('REPLY_TO', '');
+  // Intento 1: remitente personalizado (alias verificado en Gmail "Enviar como").
   if (fromAddr) {
-    var optsG = { htmlBody: html, name: mailName, from: fromAddr };
-    if (replyTo) optsG.replyTo = replyTo;
-    if (inlineImages) optsG.inlineImages = inlineImages;
-    GmailApp.sendEmail(to, subject, '', optsG);
-  } else {
-    var optsM = { to: to, subject: subject, htmlBody: html, name: mailName };
-    if (replyTo) optsM.replyTo = replyTo;
-    if (inlineImages) optsM.inlineImages = inlineImages;
-    MailApp.sendEmail(optsM);
+    try {
+      var optsG = { htmlBody: html, name: mailName, from: fromAddr };
+      if (replyTo) optsG.replyTo = replyTo;
+      if (inlineImages) optsG.inlineImages = inlineImages;
+      GmailApp.sendEmail(to, subject, '', optsG);
+      return;
+    } catch (e) {
+      Logger.log('GmailApp falló con from=%s (¿alias "Enviar como" no verificado?): %s → uso remitente por defecto.', fromAddr, e);
+    }
   }
+  // Intento 2 (o por defecto): MailApp desde la cuenta dueña del script.
+  var optsM = { to: to, subject: subject, htmlBody: html, name: mailName };
+  if (replyTo) optsM.replyTo = replyTo;
+  if (inlineImages) optsM.inlineImages = inlineImages;
+  MailApp.sendEmail(optsM);
 }
 
 // Muestra en el registro el link directo a tu planilla/bitácora de reservas.
