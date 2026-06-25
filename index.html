@@ -330,6 +330,32 @@
         }
         .lock { vertical-align: middle; }
 
+        /* ─── Medios de pago ─── */
+        .medios-pago { text-align: center; }
+        .medios-pago .cap {
+            font-size: 0.74rem;
+            color: rgba(255,255,255,0.55);
+            margin-bottom: 9px;
+            letter-spacing: 0.3px;
+            line-height: 1.3;
+        }
+        .medios-pago .logos {
+            display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: center;
+            gap: 8px;
+        }
+        .medios-pago .logos img {
+            height: 34px; width: auto; display: block;
+            border-radius: 6px;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.3);
+        }
+        .medios-pago .logos img.mp {
+            background: #fff; padding: 5px 8px;
+            box-sizing: border-box;
+        }
+        .medios-pago.bajo-boton  { margin-top: 24px; }
+        .medios-pago.sobre-boton { margin: 6px 0 16px 0; }
+
         /* ─── Splash ─── */
         #splash-screen {
             position: fixed; top: 0; left: 0;
@@ -429,6 +455,16 @@
         <p class="hint">Auto, moto o vehículo extranjero — sirve cualquier formato.<br>Escríbela sin guiones ni espacios.</p>
 
         <button class="btn-primario" id="btn-reservar" onclick="irADatos()">RESERVAR</button>
+
+        <div class="medios-pago bajo-boton">
+            <div class="cap">🔒 Al confirmar, pagas de forma segura con Mercado Pago</div>
+            <div class="logos">
+                <img class="mp" src="assets/pay/mercadopago.svg" alt="Mercado Pago" title="Mercado Pago">
+                <img src="assets/pay/visa.svg" alt="Visa" title="Visa">
+                <img src="assets/pay/mastercard.svg" alt="Mastercard" title="Mastercard">
+                <img src="assets/pay/amex.svg" alt="American Express" title="American Express">
+            </div>
+        </div>
     </section>
 
     <!-- ─── Pantalla 2: Datos + fecha + tramo ─── -->
@@ -471,14 +507,23 @@
 
         <div class="resumen" id="resumen"></div>
 
+        <div class="medios-pago sobre-boton">
+            <div class="logos">
+                <img class="mp" src="assets/pay/mercadopago.svg" alt="Mercado Pago" title="Mercado Pago">
+                <img src="assets/pay/visa.svg" alt="Visa" title="Visa">
+                <img src="assets/pay/mastercard.svg" alt="Mastercard" title="Mastercard">
+                <img src="assets/pay/amex.svg" alt="American Express" title="American Express">
+            </div>
+        </div>
+
         <button class="btn-pagar" onclick="pagar()">
             <span class="lock">🔒</span> IR A PAGAR
         </button>
         <button class="btn-volver" onclick="irAPantalla(2)">VOLVER</button>
 
         <p class="nota-pago">
-            El pago se realiza en la pasarela segura de TUU. Tu reserva queda confirmada
-            solo una vez aprobado el pago.
+            El pago se procesa de forma segura a través de Mercado Pago. Tu reserva
+            queda confirmada solo una vez aprobado el pago.
         </p>
     </section>
 
