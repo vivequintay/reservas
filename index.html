@@ -12,6 +12,7 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -457,6 +458,56 @@
             0% { transform: scale(0.3); opacity: 0; }
             100% { transform: scale(1); opacity: 1; }
         }
+        .ok-icon.chico { width: 60px; height: 60px; margin: 6px auto 12px; }
+
+        /* ─── Ticket compacto de éxito ─── */
+        .ok-ticket {
+            background: #0D3B5C; border-radius: 14px;
+            padding: 10px 18px; margin: 0 auto 14px; max-width: 320px; text-align: left;
+        }
+        .ok-ticket .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.92rem; }
+        .ok-ticket .k { color: rgba(255,255,255,0.5); }
+        .ok-ticket .v { font-weight: 700; color: #fff; }
+        .ok-ticket .v.pat { color: #8FB7D9; letter-spacing: 2px; }
+
+        /* ─── QR ─── */
+        #qr-mini { display: flex; justify-content: center; margin: 4px 0 10px; }
+        #qr-mini img, #qr-mini canvas { width: 120px !important; height: 120px !important; border-radius: 8px; background: #fff; padding: 6px; box-sizing: border-box; }
+        .qr-aviso { font-size: 0.86rem; color: rgba(255,255,255,0.8); line-height: 1.4; margin: 0 0 14px; }
+        .qr-aviso b { color: #8FB7D9; }
+        .btn-qr {
+            width: 100%; border: none; border-radius: 16px; cursor: pointer;
+            background: linear-gradient(135deg,#2196F3,#1565C0); color: #fff;
+            padding: 16px; font-size: 1.2rem; font-weight: 800; letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom: 8px;
+        }
+        .btn-qr:active { transform: scale(0.97); }
+
+        /* ─── Modal QR (pantalla completa) ─── */
+        #qr-modal {
+            display: none; position: fixed; inset: 0; z-index: 99990;
+            background: rgba(6,29,49,0.97); flex-direction: column;
+            align-items: center; justify-content: center; padding: 24px; text-align: center;
+        }
+        #qr-modal.activo { display: flex; }
+        #qr-modal h3 { color: #fff; font-weight: 800; letter-spacing: 1px; margin: 0 0 4px; }
+        #qr-modal .sub { color: rgba(255,255,255,0.6); font-size: 0.85rem; margin: 0 0 18px; }
+        #qr-grande { background: #fff; padding: 16px; border-radius: 18px; }
+        #qr-grande img, #qr-grande canvas { width: 260px !important; height: 260px !important; display: block; }
+        #qr-modal .acc { display: flex; gap: 10px; margin-top: 22px; width: 100%; max-width: 320px; }
+        #qr-modal .acc button { flex: 1; border: none; border-radius: 14px; padding: 14px; font-weight: 800; font-size: 1rem; cursor: pointer; }
+        #btn-descargar { background: #00C853; color: #062436; }
+        #btn-cerrar-qr { background: rgba(255,255,255,0.12); color: #fff; }
+
+        /* ─── Flash de éxito (clon Verificador) ─── */
+        #flash-pagado {
+            display: none; position: fixed; inset: 0; z-index: 99999;
+            background: #00C853; justify-content: center; align-items: center; flex-direction: column;
+        }
+        #flash-pagado.activo { display: flex; }
+        #flash-pagado svg { width: 160px; height: 160px; fill: #fff; margin-bottom: 16px;
+            animation: bounceIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275); }
+        #flash-pagado h1 { color: #fff; font-size: 3.6rem; font-weight: 900; margin: 0; letter-spacing: 3px; }
     </style>
 </head>
 <body>
@@ -467,6 +518,23 @@
         <img src="logo.png" class="splash-logo" alt="Logo">
         <h2 class="splash-title">VIVE QUINTAY</h2>
         <span class="splash-spa">SPA</span>
+    </div>
+
+    <!-- Flash de éxito (igual que el Verificador) -->
+    <div id="flash-pagado">
+        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        <h1>PAGADO</h1>
+    </div>
+
+    <!-- Modal QR (ver y guardar) -->
+    <div id="qr-modal">
+        <h3>Tu código QR</h3>
+        <p class="sub">Es tu pase del día. Muéstralo al ingresar.</p>
+        <div id="qr-grande"></div>
+        <div class="acc">
+            <button id="btn-descargar" onclick="descargarQR()">DESCARGAR</button>
+            <button id="btn-cerrar-qr" onclick="cerrarQR()">CERRAR</button>
+        </div>
     </div>
 
     <!-- Header -->
@@ -586,9 +654,17 @@
 
     <!-- ─── Pantalla final (placeholder) ─── -->
     <section id="screen-ok" class="screen">
-        <svg class="ok-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        <svg class="ok-icon" id="ok-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
         <h2 class="titulo" id="ok-titulo">¡Casi listo!</h2>
         <p class="subtitulo" id="ok-texto"></p>
+
+        <div id="ok-qr-bloque" style="display:none">
+            <div class="ok-ticket" id="ok-ticket"></div>
+            <div id="qr-mini"></div>
+            <p class="qr-aviso">Tu código QR es tu <b>pase</b>. Guárdalo para mostrarlo al ingresar.</p>
+            <button class="btn-qr" onclick="abrirQR()">VER Y GUARDAR QR</button>
+        </div>
+
         <button class="btn-volver" onclick="reiniciar()">HACER OTRA RESERVA</button>
     </section>
 
@@ -880,17 +956,35 @@
             const estado = (params.get("estado") || "").toLowerCase();
             if (!estado) return false;
 
+            const okIcon = document.getElementById("ok-icon");
+            const bloque = document.getElementById("ok-qr-bloque");
+            okIcon.classList.remove("chico"); okIcon.style.fill = "#52D45A";
+            bloque.style.display = "none";
+
             irAPantalla('ok');
             if (estado === "ok") {
-                document.getElementById("ok-titulo").textContent = "¡Reserva confirmada! ✅";
+                const patente = (params.get("p") || "").toUpperCase();
+                const fecha = params.get("f") || "";
+                const tramo = params.get("t") || "";
+                document.getElementById("ok-titulo").textContent = "¡Reserva confirmada!";
                 document.getElementById("ok-texto").innerHTML =
-                    "Tu pago fue recibido. Te enviamos la confirmación por correo con el día y el tramo.<br><br>¡Te esperamos en Vive Quintay!";
+                    "Tu pago fue recibido. Te enviamos la confirmación por correo.";
+                lanzarFlashPagado();   // flash verde + vibración (igual que el Verificador)
+                if (patente) {
+                    okIcon.classList.add("chico");
+                    document.getElementById("ok-ticket").innerHTML =
+                        `<div class="row"><span class="k">Patente</span><span class="v pat">${patente}</span></div>` +
+                        (fecha ? `<div class="row"><span class="k">Día</span><span class="v">${fecha}</span></div>` : "") +
+                        (tramo ? `<div class="row"><span class="k">Tramo</span><span class="v">${tramo}</span></div>` : "");
+                    generarQR(patente);
+                    bloque.style.display = "block";
+                }
             } else if (estado === "pendiente") {
-                document.getElementById("ok-titulo").textContent = "Pago en revisión ⏳";
+                document.getElementById("ok-titulo").textContent = "Pago en revisión";
                 document.getElementById("ok-texto").innerHTML =
-                    "Tu pago está siendo confirmado. Apenas se apruebe, te llegará el correo con tu reserva.";
+                    "Tu pago está siendo confirmado. Apenas se apruebe, te llegará el correo con tu reserva y tu QR.";
             } else { // fallo / cancelado
-                document.querySelector("#screen-ok .ok-icon").style.fill = "#FF8A80";
+                okIcon.style.fill = "#FF8A80";
                 document.getElementById("ok-titulo").textContent = "Pago no completado";
                 document.getElementById("ok-texto").innerHTML =
                     "No se concretó el pago, así que no hay reserva. Puedes intentarlo nuevamente cuando quieras.";
@@ -898,6 +992,37 @@
             // Limpiar la query para que un refresco no repita la pantalla.
             history.replaceState({}, "", window.location.pathname);
             return true;
+        }
+
+        // ─────────── QR + flash de éxito ───────────
+        let QR_PATENTE = "";
+        function generarQR(patente) {
+            QR_PATENTE = patente;
+            const mini = document.getElementById("qr-mini");
+            mini.innerHTML = "";
+            try { new QRCode(mini, { text: patente, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+        }
+        function abrirQR() {
+            const g = document.getElementById("qr-grande");
+            g.innerHTML = "";
+            try { new QRCode(g, { text: QR_PATENTE, width: 520, height: 520, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+            document.getElementById("qr-modal").classList.add("activo");
+        }
+        function cerrarQR() { document.getElementById("qr-modal").classList.remove("activo"); }
+        function descargarQR() {
+            const cv = document.querySelector("#qr-grande canvas");
+            let url = cv ? cv.toDataURL("image/png") : null;
+            if (!url) { const im = document.querySelector("#qr-grande img"); url = im ? im.src : null; }
+            if (!url) return;
+            const a = document.createElement("a");
+            a.href = url; a.download = "reserva-vivequintay-" + QR_PATENTE + ".png";
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        function lanzarFlashPagado() {
+            if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+            const f = document.getElementById("flash-pagado");
+            f.classList.add("activo");
+            setTimeout(() => f.classList.remove("activo"), 1300);
         }
 
         function reiniciar() {
@@ -908,6 +1033,9 @@
             document.getElementById("inputEmail").value = "";
             document.getElementById("inputTelefono").value = "";
             document.querySelectorAll(".tramo").forEach(x => x.classList.remove("seleccionado"));
+            document.getElementById("ok-qr-bloque").style.display = "none";
+            const okIcon = document.getElementById("ok-icon");
+            okIcon.classList.remove("chico"); okIcon.style.fill = "#52D45A";
             calRef = new Date(); calRef.setDate(1);
             renderCalendario();
             irAPantalla(1);

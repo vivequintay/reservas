@@ -95,6 +95,11 @@ function crearCobro(datos, modo) {
     return respuestaError(modo, 'Faltan datos de la reserva. Vuelve atrás e inténtalo de nuevo.');
   }
 
+  // Filtro lista negra: una patente bloqueada no puede reservar (ni colarse por QR).
+  if (enBlacklist_(patente)) {
+    return respuestaError(modo, 'Esta patente no está habilitada para reservar. Por favor contacta a administración.');
+  }
+
   var precio = precioVigente_();   // del documento config/reservas (lo edita el panel admin)
   var token  = prop('MP_ACCESS_TOKEN', '');
   var pwaUrl = prop('PWA_URL', '');
@@ -117,7 +122,8 @@ function crearCobro(datos, modo) {
     external_reference: ref,
     payer: { name: firstName, surname: lastName, email: email },
     back_urls: {
-      success: pwaUrl + '?estado=ok',
+      success: pwaUrl + '?estado=ok&p=' + encodeURIComponent(patente) +
+               '&f=' + encodeURIComponent(fecha) + '&t=' + encodeURIComponent(tramo),
       failure: pwaUrl + '?estado=fallo',
       pending: pwaUrl + '?estado=pendiente'
     },
@@ -343,6 +349,18 @@ function precioVigente_() {
   return parseInt(prop('PRECIO', '4000'), 10);
 }
 
+// ¿La patente está en config/blacklist (campo 'lista')? Si no hay credenciales, no bloquea.
+function enBlacklist_(patente) {
+  if (!prop('FIREBASE_SA', '')) return false;
+  try {
+    var resp = UrlFetchApp.fetch(fsBase_() + 'config/blacklist', {
+      method: 'get', headers: { 'Authorization': 'Bearer ' + firebaseToken_() }, muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return false;
+    var lista = fsDocAObj_(JSON.parse(resp.getContentText())).lista || [];
+    return lista.indexOf(patente) !== -1;
+  } catch (e) { return false; }
+}
+
 // ── Helpers Firestore REST (usan la cuenta de servicio vía firebaseToken_) ──
 function fsBase_() {
   return 'https://firestore.googleapis.com/v1/projects/' +
@@ -456,6 +474,12 @@ function enviarCorreos(r) {
   var notif = prop('NOTIF_EMAIL', '');
 
   if (r.email) {
+    var mapsUrl = prop('MAPS_URL', 'https://www.google.com/maps/search/?api=1&query=Vive+Quintay+Quintay+Chile');
+    var qrBlob = null;
+    try {
+      var qrResp = UrlFetchApp.fetch('https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=' + encodeURIComponent(r.patente), { muteHttpExceptions: true });
+      if (qrResp.getResponseCode() === 200) qrBlob = qrResp.getBlob().setName('qr.png');
+    } catch (e) {}
     var htmlCliente =
         '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#0A2F4F">' +
         '<h2 style="color:#00913B">¡Reserva confirmada! ✅</h2>' +
@@ -464,9 +488,11 @@ function enviarCorreos(r) {
         fila('Patente', r.patente) + fila('Día', fechaISO_(r.fecha)) + fila('Tramo horario', r.tramo) +
         fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
         '</table>' +
-        '<p style="margin-top:18px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
+        (qrBlob ? '<div style="text-align:center;margin:20px 0"><img src="cid:qrreserva" alt="Código QR de tu reserva" style="width:200px;height:200px;border:1px solid #eee;border-radius:10px"><p style="font-size:12px;color:#888;margin:6px 0 0">Tu <b>código QR</b> es tu pase. Muéstralo al ingresar.</p></div>' : '') +
+        '<p style="margin:16px 0"><a href="' + mapsUrl + '" style="color:#1565C0;font-weight:bold;text-decoration:none">📍 Cómo llegar (Google Maps)</a></p>' +
+        '<p style="margin-top:14px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
         '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>';
-    enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente);
+    enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, qrBlob ? { qrreserva: qrBlob } : null);
   }
 
   if (notif) {
@@ -492,17 +518,19 @@ function enviarCorreos(r) {
 //               Gmail → Configuración → Cuentas → "Enviar como"). Si está, el
 //               correo sale DESDE esa dirección, no la personal. Requiere permiso Gmail.
 //   REPLY_TO  = dirección de respuesta (OPCIONAL).
-function enviarMail_(to, subject, html) {
+function enviarMail_(to, subject, html, inlineImages) {
   var mailName = prop('MAIL_NAME', 'Vive Quintay SpA');
   var fromAddr = prop('MAIL_FROM', '');
   var replyTo  = prop('REPLY_TO', '');
   if (fromAddr) {
     var optsG = { htmlBody: html, name: mailName, from: fromAddr };
     if (replyTo) optsG.replyTo = replyTo;
+    if (inlineImages) optsG.inlineImages = inlineImages;
     GmailApp.sendEmail(to, subject, '', optsG);
   } else {
     var optsM = { to: to, subject: subject, htmlBody: html, name: mailName };
     if (replyTo) optsM.replyTo = replyTo;
+    if (inlineImages) optsM.inlineImages = inlineImages;
     MailApp.sendEmail(optsM);
   }
 }
