@@ -289,6 +289,20 @@
             background: #0A4763;
             color: #8FB7D9;
         }
+        .tramo.no-disp {
+            opacity: 0.3;
+            text-decoration: line-through;
+            cursor: not-allowed;
+            color: rgba(255,255,255,0.5);
+        }
+        .aviso-tramos {
+            display: none;
+            color: #FFB74D;
+            font-size: 0.8rem;
+            line-height: 1.4;
+            text-align: left;
+            margin: 2px 4px 12px;
+        }
 
         /* ─── Resumen ─── */
         .resumen {
@@ -599,6 +613,7 @@
 
         <label class="campo">Tramo horario estimado</label>
         <div class="tramos" id="tramos"></div>
+        <p class="aviso-tramos" id="aviso-tramos"></p>
 
         <p class="error-msg" id="error-datos"></p>
 
@@ -691,6 +706,10 @@
         };
         let CONFIG = { ...CONFIG_DEFAULT };
 
+        // Reglas de anticipación (deben coincidir con el backend).
+        const MAX_DIAS_ANTICIPO  = 7;   // máximo una semana hacia adelante
+        const MIN_HORAS_ANTICIPO = 2;   // mínimo 2 horas para reservas del mismo día
+
         async function cargarConfig() {
             try {
                 const snap = await db.collection("config").doc("reservas").get();
@@ -761,20 +780,57 @@
         });
 
         // ─────────── Tramos ───────────
+        // Minutos desde medianoche del INICIO del tramo ("09:00 - 10:00" → 540).
+        function horaInicioTramo(t) {
+            const m = (t.split("-")[0] || "").match(/(\d{1,2}):(\d{2})/);
+            return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+        }
+        // ¿Se puede elegir este tramo según el día elegido y la anticipación mínima?
+        function tramoDisponible(t) {
+            if (!reserva.fecha) return true;                    // aún sin fecha: no filtramos
+            if (reserva.fecha !== ymd(new Date())) return true; // días futuros: todos sirven
+            const ini = horaInicioTramo(t);
+            if (ini === null) return true;
+            const ahora = new Date();
+            const minAhora = ahora.getHours() * 60 + ahora.getMinutes();
+            return ini >= minAhora + MIN_HORAS_ANTICIPO * 60;   // hoy: solo con 2h de margen
+        }
+
         function renderTramos() {
             const cont = document.getElementById("tramos");
             cont.innerHTML = "";
+            let hayDisponibles = false;
             CONFIG.tramos.forEach(t => {
                 const b = document.createElement("button");
                 b.className = "tramo";
                 b.textContent = t;
-                b.onclick = () => {
-                    reserva.tramo = t;
-                    document.querySelectorAll(".tramo").forEach(x => x.classList.remove("seleccionado"));
-                    b.classList.add("seleccionado");
-                };
+                if (tramoDisponible(t)) {
+                    hayDisponibles = true;
+                    if (reserva.tramo === t) b.classList.add("seleccionado");
+                    b.onclick = () => {
+                        reserva.tramo = t;
+                        document.querySelectorAll(".tramo").forEach(x => x.classList.remove("seleccionado"));
+                        b.classList.add("seleccionado");
+                    };
+                } else {
+                    b.classList.add("no-disp");
+                    b.disabled = true;
+                    if (reserva.tramo === t) reserva.tramo = "";  // estaba elegido y ya no sirve
+                }
                 cont.appendChild(b);
             });
+            // Aviso si HOY ya no quedan tramos con la anticipación mínima.
+            const aviso = document.getElementById("aviso-tramos");
+            if (aviso) {
+                const hoyElegido = reserva.fecha === ymd(new Date());
+                if (hoyElegido && !hayDisponibles) {
+                    aviso.textContent = "Para hoy ya no quedan tramos con la anticipación mínima de " +
+                        MIN_HORAS_ANTICIPO + " horas. Elige otro día.";
+                    aviso.style.display = "block";
+                } else {
+                    aviso.style.display = "none";
+                }
+            }
         }
 
         // ─────────── Calendario ───────────
@@ -791,7 +847,9 @@
 
         function diaHabilitado(d) {
             const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+            const max = new Date(hoy); max.setDate(max.getDate() + MAX_DIAS_ANTICIPO); // tope: 1 semana
             if (d < hoy) return false;                                  // no pasado
+            if (d > max) return false;                                  // no más de una semana
             if (!CONFIG.dias_semana.includes(d.getDay())) return false; // día de semana no laboral
             if ((CONFIG.fechas_bloqueadas || []).includes(ymd(d))) return false; // feriado puntual
             return true;
@@ -831,6 +889,7 @@
                     cel.onclick = () => {
                         reserva.fecha = ymd(fecha);
                         renderCalendario();
+                        renderTramos();   // recalcula tramos según el día (anticipación de hoy)
                     };
                 } else {
                     cel.className = "cal-day deshabilitado";
@@ -857,6 +916,11 @@
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = "Ingresa un correo válido (te enviaremos la confirmación)."; return; }
             if (!reserva.fecha) { err.textContent = "Elige el día de tu reserva."; return; }
             if (!reserva.tramo) { err.textContent = "Elige un tramo horario."; return; }
+            if (!tramoDisponible(reserva.tramo)) {   // por si pasó la hora mientras llenaba
+                renderTramos();
+                err.textContent = "Ese tramo ya no cumple las " + MIN_HORAS_ANTICIPO + " horas de anticipación. Elige otro.";
+                return;
+            }
             err.textContent = "";
 
             reserva.nombre = nombre;
@@ -1038,6 +1102,7 @@
             okIcon.classList.remove("chico"); okIcon.style.fill = "#52D45A";
             calRef = new Date(); calRef.setDate(1);
             renderCalendario();
+            renderTramos();   // limpia desactivados/selección de la reserva anterior
             irAPantalla(1);
         }
 

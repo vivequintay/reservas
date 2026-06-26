@@ -51,6 +51,35 @@ function fechaISO_(v) {
   return String(v == null ? '' : v);
 }
 
+// ── Reglas de coherencia para reservar (red de seguridad del servidor) ──
+//   - no en el pasado
+//   - máximo MAX_DIAS_ANTICIPO días hacia adelante (1 semana)
+//   - el mismo día, mínimo MIN_HORAS_ANTICIPO horas de anticipación
+// Devuelve null si todo OK, o un mensaje de error legible para el cliente.
+var MAX_DIAS_ANTICIPO  = 7;
+var MIN_HORAS_ANTICIPO = 2;
+function validarFechaHora_(fecha, tramo) {
+  var tz = 'America/Santiago';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return 'Fecha inválida. Vuelve atrás y elige el día en el calendario.';
+  var ahora  = new Date();
+  var hoyStr = Utilities.formatDate(ahora, tz, 'yyyy-MM-dd');
+  var maxStr = Utilities.formatDate(new Date(ahora.getTime() + MAX_DIAS_ANTICIPO * 24 * 60 * 60 * 1000), tz, 'yyyy-MM-dd');
+  if (fecha < hoyStr) return 'No puedes reservar en una fecha pasada.';
+  if (fecha > maxStr) return 'Solo puedes reservar hasta con una semana de anticipación.';
+  if (fecha === hoyStr) {
+    var m = (tramo.split('-')[0] || '').match(/(\d{1,2}):(\d{2})/);
+    if (m) {
+      var minTramo = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      var minAhora = parseInt(Utilities.formatDate(ahora, tz, 'H'), 10) * 60 +
+                     parseInt(Utilities.formatDate(ahora, tz, 'm'), 10);
+      if (minTramo < minAhora + MIN_HORAS_ANTICIPO * 60) {
+        return 'Para hoy debes reservar con al menos ' + MIN_HORAS_ANTICIPO + ' horas de anticipación. Elige un tramo más tarde u otro día.';
+      }
+    }
+  }
+  return null;
+}
+
 // ───────────────────────── Puntos de entrada ────────────────────────────────
 function doPost(e) {
   try {
@@ -99,6 +128,10 @@ function crearCobro(datos, modo) {
   if (enBlacklist_(patente)) {
     return respuestaError(modo, 'Esta patente no está habilitada para reservar. Por favor contacta a administración.');
   }
+
+  // Coherencia de fecha/hora (la PWA ya filtra, pero validamos también en el servidor).
+  var errFH = validarFechaHora_(fecha, tramo);
+  if (errFH) return respuestaError(modo, errFH);
 
   var precio = precioVigente_();   // del documento config/reservas (lo edita el panel admin)
   var token  = prop('MP_ACCESS_TOKEN', '');
@@ -505,14 +538,14 @@ function enviarCorreos(r) {
     } catch (e) {}
     var htmlCliente =
         '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#0A2F4F">' +
-        '<h2 style="color:#00913B">¡Reserva confirmada! ✅</h2>' +
+        '<h2 style="color:#00913B">Reserva confirmada</h2>' +
         '<p>Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
         fila('Patente', r.patente) + fila('Día', fechaISO_(r.fecha)) + fila('Tramo horario', r.tramo) +
         fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
         '</table>' +
         (qrBlob ? '<div style="text-align:center;margin:20px 0"><img src="cid:qrreserva" alt="Código QR de tu reserva" style="width:200px;height:200px;border:1px solid #eee;border-radius:10px"><p style="font-size:12px;color:#888;margin:6px 0 0">Tu <b>código QR</b> es tu pase. Muéstralo al ingresar.</p></div>' : '') +
-        '<p style="margin:16px 0"><a href="' + mapsUrl + '" style="color:#1565C0;font-weight:bold;text-decoration:none">📍 Cómo llegar (Google Maps)</a></p>' +
+        '<div style="text-align:center;margin:22px 0"><a href="' + mapsUrl + '" target="_blank" style="display:inline-block;background:#1565C0;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 30px;border-radius:12px">Cómo llegar al estacionamiento</a></div>' +
         '<p style="margin-top:14px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
         '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>';
     try { enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, qrBlob ? { qrreserva: qrBlob } : null); }
@@ -530,7 +563,7 @@ function enviarCorreos(r) {
         fila('Nombre', r.nombre) + fila('Email', r.email) + fila('Teléfono', r.telefono) +
         fila('Monto', fmt(r.monto)) + fila('Ref', r.ref) +
         '</table>' +
-        (linkPlanilla ? '<p style="margin-top:14px"><a href="' + linkPlanilla + '">📋 Ver bitácora completa de reservas</a></p>' : '') +
+        (linkPlanilla ? '<p style="margin-top:14px"><a href="' + linkPlanilla + '">Ver bitácora completa de reservas</a></p>' : '') +
         '</div>';
     try { enviarMail_(notif, 'NUEVA RESERVA PAGADA — ' + r.patente + ' (' + fechaISO_(r.fecha) + ')', htmlEmpresa); }
     catch (e) { Logger.log('Correo a la empresa falló: %s', e); }
@@ -570,7 +603,7 @@ function enviarMail_(to, subject, html, inlineImages) {
 function verPlanilla() {
   var id = prop('SHEET_ID', '');
   if (!id) { Logger.log('No hay SHEET_ID. Ejecuta setup() primero.'); return; }
-  Logger.log('📋 Tu bitácora de reservas:');
+  Logger.log('Tu bitácora de reservas:');
   Logger.log('https://docs.google.com/spreadsheets/d/' + id + '/edit');
 }
 
@@ -585,8 +618,8 @@ function paginaRedirect(url) {
     '<!DOCTYPE html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<style>body{background:#0A2F4F;color:#fff;font-family:Inter,Arial,sans-serif;text-align:center;padding:60px 20px}' +
-    '.s{width:46px;height:46px;border:4px solid rgba(255,255,255,.2);border-top-color:#00E0D0;border-radius:50%;margin:20px auto;animation:r 1s linear infinite}' +
-    '@keyframes r{to{transform:rotate(360deg)}}a{color:#00E0D0}</style></head><body>' +
+    '.s{width:46px;height:46px;border:4px solid rgba(255,255,255,.2);border-top-color:#8FB7D9;border-radius:50%;margin:20px auto;animation:r 1s linear infinite}' +
+    '@keyframes r{to{transform:rotate(360deg)}}a{color:#8FB7D9}</style></head><body>' +
     '<h2>Redirigiendo al pago seguro…</h2><div class="s"></div>' +
     '<p>Si no avanzas en unos segundos, <a href="' + url + '">haz clic aquí</a>.</p>' +
     '<script>location.href=' + JSON.stringify(url) + ';</script></body></html>';
@@ -598,7 +631,7 @@ function paginaError(msg) {
   var html =
     '<!DOCTYPE html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<style>body{background:#0A2F4F;color:#fff;font-family:Inter,Arial,sans-serif;text-align:center;padding:60px 20px}a{color:#00E0D0}</style></head><body>' +
+    '<style>body{background:#0A2F4F;color:#fff;font-family:Inter,Arial,sans-serif;text-align:center;padding:60px 20px}a{color:#8FB7D9}</style></head><body>' +
     '<h2 style="color:#FF8A80">Ups…</h2><p>' + msg + '</p>' +
     (pwaUrl ? '<p><a href="' + pwaUrl + '">Volver a reservar</a></p>' : '') +
     '</body></html>';
