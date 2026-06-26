@@ -531,24 +531,55 @@ function enviarCorreos(r) {
 
   if (r.email) {
     var mapsUrl = prop('MAPS_URL', 'https://maps.app.goo.gl/rVd23QyZKCNFR8xz9');
-    var qrBlob = null;
+    var inlineCliente = {};
+
+    // QR de la reserva (inline cid:qrreserva).
     try {
       var qrResp = UrlFetchApp.fetch('https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=' + encodeURIComponent(r.patente), { muteHttpExceptions: true });
-      if (qrResp.getResponseCode() === 200) qrBlob = qrResp.getBlob().setName('qr.png');
+      if (qrResp.getResponseCode() === 200) inlineCliente.qrreserva = qrResp.getBlob().setName('qr.png');
     } catch (e) {}
+
+    // Logo corporativo (inline cid:logovq) — se incrusta para que SIEMPRE se vea.
+    try {
+      var logoResp = UrlFetchApp.fetch('https://vivequintay.github.io/reservas/logo.png', { muteHttpExceptions: true });
+      if (logoResp.getResponseCode() === 200) inlineCliente.logovq = logoResp.getBlob().setName('logo.png');
+    } catch (e) {}
+
+    var logoHtml = inlineCliente.logovq
+      ? '<img src="cid:logovq" alt="Vive Quintay" width="66" height="66" style="display:block;border-radius:16px;margin:0 auto">'
+      : '';
+    var qrHtml = inlineCliente.qrreserva
+      ? '<div style="text-align:center;margin:24px 0 4px"><div style="display:inline-block;background:#ffffff;padding:12px;border-radius:14px"><img src="cid:qrreserva" alt="Codigo QR de tu reserva" width="190" height="190" style="display:block;width:190px;height:190px"></div>' +
+        '<p style="font-size:12px;color:#9db6cc;margin:8px 0 0">Tu <b style="color:#fff">código QR</b> es tu pase. Muéstralo al ingresar.</p></div>'
+      : '';
+
     var htmlCliente =
-        '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#0A2F4F">' +
-        '<h2 style="color:#00913B">Reserva confirmada</h2>' +
-        '<p>Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
-        '<table style="width:100%;border-collapse:collapse">' +
-        fila('Patente', r.patente) + fila('Día', fechaISO_(r.fecha)) + fila('Tramo horario', r.tramo) +
-        fila('Total pagado', fmt(r.monto)) + fila('N° de reserva', r.ref) +
+      '<div style="background:#0A2F4F;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0">' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0A2F4F">' +
+          '<tr><td align="center" style="padding:30px 16px">' +
+            '<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:480px;margin:0 auto">' +
+              '<tr><td align="center" style="padding-bottom:18px">' +
+                logoHtml +
+                '<div style="color:#8FB7D9;font-size:12px;font-weight:bold;letter-spacing:5px;margin-top:10px">VIVE QUINTAY &middot; SPA</div>' +
+              '</td></tr>' +
+              '<tr><td style="background:#0D3B5C;border-radius:16px;padding:26px 24px">' +
+                '<h1 style="color:#52D45A;margin:0 0 6px;font-size:21px;font-weight:800">Reserva confirmada</h1>' +
+                '<p style="color:#cfe0ee;margin:0 0 20px;font-size:14px;line-height:1.5">Hola ' + r.nombre + ', tu pago fue recibido y tu lugar está reservado.</p>' +
+                '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
+                  filaC_('Patente', r.patente) + filaC_('Día', fechaISO_(r.fecha)) + filaC_('Tramo horario', r.tramo) +
+                  filaC_('Total pagado', fmt(r.monto)) + filaC_('N&deg; de reserva', r.ref) +
+                '</table>' +
+                qrHtml +
+                '<div style="text-align:center;margin:22px 0 4px"><a href="' + mapsUrl + '" target="_blank" style="display:inline-block;background:#1565C0;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 30px;border-radius:12px">Cómo llegar al estacionamiento</a></div>' +
+                '<p style="color:#9db6cc;font-size:13px;margin:16px 0 0;line-height:1.5">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
+              '</td></tr>' +
+              '<tr><td align="center" style="padding-top:18px;color:#6f8aa3;font-size:11px;letter-spacing:0.5px">Vive Quintay SpA &mdash; Reserva de estacionamiento</td></tr>' +
+            '</table>' +
+          '</td></tr>' +
         '</table>' +
-        (qrBlob ? '<div style="text-align:center;margin:20px 0"><img src="cid:qrreserva" alt="Código QR de tu reserva" style="width:200px;height:200px;border:1px solid #eee;border-radius:10px"><p style="font-size:12px;color:#888;margin:6px 0 0">Tu <b>código QR</b> es tu pase. Muéstralo al ingresar.</p></div>' : '') +
-        '<div style="text-align:center;margin:22px 0"><a href="' + mapsUrl + '" target="_blank" style="display:inline-block;background:#1565C0;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 30px;border-radius:12px">Cómo llegar al estacionamiento</a></div>' +
-        '<p style="margin-top:14px">Te esperamos. La hora es estimada dentro del tramo elegido.</p>' +
-        '<p style="color:#888;font-size:12px">Vive Quintay SpA</p></div>';
-    try { enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, qrBlob ? { qrreserva: qrBlob } : null); }
+      '</div>';
+
+    try { enviarMail_(r.email, 'Confirmación de tu reserva — Vive Quintay SpA', htmlCliente, inlineCliente); }
     catch (e) { Logger.log('Correo al cliente falló (%s): %s', r.email, e); }
   }
 
@@ -610,6 +641,14 @@ function verPlanilla() {
 function fila(k, v) {
   return '<tr><td style="padding:4px 12px 4px 0;color:#888">' + k + '</td>' +
          '<td style="padding:4px 0;font-weight:bold">' + (v || '-') + '</td></tr>';
+}
+
+// Fila para el correo corporativo (fondo oscuro): etiqueta celeste, valor blanco.
+function filaC_(k, v) {
+  return '<tr>' +
+    '<td style="padding:8px 0;color:#9db6cc;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08)">' + k + '</td>' +
+    '<td style="padding:8px 0;color:#ffffff;font-weight:bold;font-size:13px;text-align:right;border-bottom:1px solid rgba(255,255,255,0.08)">' + (v || '-') + '</td>' +
+    '</tr>';
 }
 
 // ──────────────────────── Páginas de respuesta HTML ─────────────────────────
