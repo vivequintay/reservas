@@ -714,6 +714,45 @@ function diagnosticoMP() {
   if (!d.init_point) Logger.log('Respuesta: %s', (r.getContentText() || '').substring(0, 300));
 }
 
+// ─────────────────── Pruebas de correo (ejecutar a mano) ────────────────────
+// Envía 2 correos de prueba (GmailApp con alias + MailApp) a NOTIF_EMAIL.
+function probarCorreo() {
+  var notif = prop('NOTIF_EMAIL', '');
+  var from  = prop('MAIL_FROM', '');
+  var name  = prop('MAIL_NAME', 'Vive Quintay SpA');
+  Logger.log('NOTIF_EMAIL = "%s" | MAIL_FROM = "%s" | MAIL_NAME = "%s"', notif, from, name);
+  Logger.log('Cuota diaria de correos restante: %s', MailApp.getRemainingDailyQuota());
+  var destino = notif || Session.getActiveUser().getEmail();
+  if (from) {
+    try {
+      GmailApp.sendEmail(destino, 'PRUEBA 1 (GmailApp + from) - Vive Quintay',
+        '', { htmlBody: '<b>Prueba remitente: ' + from + '</b>', name: name, from: from });
+      Logger.log('OK PRUEBA 1 (GmailApp from=%s)', from);
+    } catch (e) { Logger.log('FALLO PRUEBA 1 (GmailApp from=%s): %s', from, e); }
+  }
+  try {
+    MailApp.sendEmail({ to: destino, subject: 'PRUEBA 2 (MailApp) - Vive Quintay',
+      htmlBody: '<b>Prueba remitente por defecto.</b>', name: name });
+    Logger.log('OK PRUEBA 2 (MailApp)');
+  } catch (e) { Logger.log('FALLO PRUEBA 2 (MailApp): %s', e); }
+}
+
+// Envía el CORREO REAL de confirmación (corporativo, con logo + QR) a NOTIF_EMAIL,
+// sin necesidad de hacer un pago. Sirve para ver cómo le llega al cliente.
+function probarCorreoReserva() {
+  enviarCorreos({
+    ref: 'RES-PRUEBA-123',
+    patente: 'TEST99',
+    nombre: 'Cliente Prueba',
+    email: prop('NOTIF_EMAIL', ''),
+    telefono: '+56 9 1234 5678',
+    fecha: '2026-07-01',
+    tramo: '12:00 - 13:00',
+    monto: 4000
+  });
+  Logger.log('Listo: enviarCorreos ejecutado. Revisa tu bandeja (cliente con logo+QR + aviso empresa).');
+}
+
 // ─────────────────────── Setup (ejecutar UNA vez) ───────────────────────────
 function setup() {
   var sp = PropertiesService.getScriptProperties();
