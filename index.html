@@ -433,9 +433,11 @@
             55% { opacity: 1; }
             100% { transform: scale(1); opacity: 0.6; }
         }
+        /* El MISMO disco que Android muestra mientras la app carga: así esa pantalla y
+           ésta se leen como una sola. */
         .splash-logo {
             width: 120px; height: 120px;
-            border-radius: 26px;
+            border-radius: 50%;
             position: relative; z-index: 1;
             animation: splashLogoRise 0.65s cubic-bezier(0.175,0.885,0.32,1.275) 0.2s both;
         }
@@ -450,11 +452,6 @@
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
             filter: drop-shadow(0 0 16px rgba(100,180,100,0.3));
             animation: splashFadeUp 0.5s ease 0.55s both;
-        }
-        .splash-spa {
-            font-size: 0.72rem; font-weight: 700; letter-spacing: 10px;
-            color: rgba(255,255,255,0.38); text-transform: uppercase;
-            animation: splashFadeUp 0.5s ease 0.85s both;
         }
         @keyframes splashFadeUp {
             from { opacity: 0; transform: translateY(12px); }
@@ -529,9 +526,8 @@
     <!-- Splash -->
     <div id="splash-screen">
         <div class="splash-glow"></div>
-        <img src="logo.png" class="splash-logo" alt="Logo">
+        <img src="icon-512.png" class="splash-logo" alt="Logo">
         <h2 class="splash-title">VIVE QUINTAY</h2>
-        <span class="splash-spa">SPA</span>
     </div>
 
     <!-- Flash de éxito (igual que el Verificador) -->
